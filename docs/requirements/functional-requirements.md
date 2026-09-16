@@ -9,7 +9,9 @@
 - O Senior Gestão de Pessoas é a fonte autoritativa do estado do vínculo e dos eventos de RH do colaborador.
 - O sistema deve interpretar estados e datas de RH e refletir o lifecycle esperado da identidade no AD DS.
 - A conta corporativa representa a **pessoa**, e não um vínculo trabalhista específico.
-- Mudanças de vínculo não devem gerar nova identidade quando a pessoa já possuir uma conta corporativa correlacionada de forma inequívoca.
+- O **CPF é a única chave autorizada para determinar que vínculos pertencem à mesma pessoa**.
+- Mudanças de vínculo não devem gerar nova identidade quando o CPF já estiver associado de forma inequívoca a uma conta corporativa existente.
+- Nenhum outro atributo pode ser utilizado como fallback de correlação de pessoa.
 - O comportamento deve ser determinístico, auditável e idempotente.
 - O MVP não deve depender de abertura manual de tickets para operações normais de lifecycle.
 - Dados fora do escopo IAM, como remuneração e folha, não fazem parte do contrato funcional.
@@ -25,7 +27,7 @@
 | RF-003 | O sistema deve atualizar atributos da identidade no AD DS quando ocorrer alteração relevante e autorizada na Senior. |
 | RF-004 | O sistema deve desabilitar a conta no AD DS quando o vínculo atingir um estado de desligamento conforme as regras de negócio definidas. |
 | RF-005 | O sistema deve tratar recontratações sem gerar identidades duplicadas e conforme política de reativação/reutilização definida. |
-| RF-006 | O sistema deve correlacionar de forma inequívoca um colaborador da Senior com sua identidade correspondente no AD DS. |
+| RF-006 | O sistema deve correlacionar a pessoa exclusivamente pelo CPF e, a partir dessa correlação, localizar sua identidade correspondente no IAM/AD DS. |
 | RF-007 | O sistema deve impedir a criação duplicada da mesma identidade mesmo em caso de reprocessamento, eventos repetidos ou retries. |
 | RF-008 | O sistema deve registrar cada tentativa de provisionamento e seu resultado de forma auditável. |
 | RF-009 | O sistema deve registrar falhas de processamento de forma rastreável, incluindo a identidade afetada, operação e motivo da falha. |
@@ -56,10 +58,10 @@
 | RF-034 | O sistema deve permitir classificar alertas por severidade conforme o impacto da operação de lifecycle, permitindo tratamento prioritário de falhas de desabilitação, reativação e criação de identidade. |
 | RF-035 | O sistema deve manter rastreabilidade entre uma falha de provisionamento, suas tentativas, o alerta gerado, o colaborador afetado e a resolução ou reprocessamento correspondente. |
 | RF-036 | O sistema deve permitir detectar e alertar divergências persistentes encontradas pela reconciliação quando o estado real do AD DS não convergir para o estado esperado definido pelo lifecycle. |
-| RF-037 | O sistema deve associar a identidade corporativa à pessoa da Senior, e não exclusivamente à matrícula ou ao vínculo trabalhista. |
-| RF-038 | Quando a mesma pessoa iniciar um novo vínculo, incluindo transições como Estagiário → CLT, o sistema deve reutilizar a conta AD existente quando a correlação for inequívoca, preservando a identidade e atualizando os atributos do novo vínculo. |
-| RF-039 | O sistema deve utilizar preferencialmente um identificador interno estável da Pessoa na Senior como chave principal de correlação; CPF poderá ser utilizado apenas como mecanismo auxiliar de matching quando necessário e aprovado. |
-| RF-040 | Em caso de matching de pessoa ambíguo ou conflitante, o sistema não deve criar, reativar ou alterar automaticamente uma conta candidata; deve registrar a condição e gerar alerta para investigação. |
+| RF-037 | O sistema deve associar a identidade corporativa à pessoa, utilizando o CPF como identificador funcional exclusivo dessa pessoa. |
+| RF-038 | Quando um novo vínculo possuir o mesmo CPF de uma identidade já existente, incluindo transições como Estagiário → CLT, o sistema deve reutilizar a mesma conta AD, preservando a identidade e atualizando os atributos do novo vínculo. |
+| RF-039 | O sistema não deve utilizar Person ID, matrícula, nome, e-mail, UPN, `sAMAccountName` ou qualquer outro atributo como fallback para correlacionar automaticamente uma pessoa quando o CPF estiver ausente, inválido ou divergente. |
+| RF-040 | Quando o CPF estiver ausente, inválido ou associado de forma conflitante a mais de uma identidade, o sistema não deve criar, reativar ou alterar automaticamente uma conta candidata; deve registrar a condição e gerar alerta para investigação. |
 
 ## Modelo de estados
 
@@ -121,7 +123,7 @@ ACTIVE
 TERMINATED
 ```
 
-Uma recontratação ou mudança de vínculo poderá reutilizar a identidade existente quando a pessoa for correlacionada de forma inequívoca. Dependendo das datas e regras de lifecycle, a conta poderá permanecer ativa, ser temporariamente desabilitada entre vínculos ou ser reativada no início do novo vínculo.
+Uma recontratação ou mudança de vínculo deve reutilizar a identidade existente quando o CPF já estiver associado a uma identidade IAM. Dependendo das datas e regras de lifecycle, a conta poderá permanecer ativa, ser temporariamente desabilitada entre vínculos ou ser reativada no início do novo vínculo.
 
 ## Identidade da pessoa e múltiplos vínculos
 
@@ -129,6 +131,7 @@ O sistema deve distinguir conceitualmente:
 
 ```text
 Pessoa
+  ├── CPF: chave exclusiva de correlação
   └── identidade corporativa persistente
 
 Vínculo
@@ -138,8 +141,7 @@ Vínculo
 Exemplo esperado:
 
 ```text
-Pessoa: João Silva
-Person ID: 84572
+CPF: mesmo valor
 
 Estágio / matrícula 10234
         |
@@ -147,14 +149,14 @@ Estágio / matrícula 10234
         v
 Conta AD existente
         |
-        | novo vínculo
+        | novo vínculo com mesmo CPF
         v
 CLT / matrícula 19873
 
 Resultado: reutilizar a mesma conta AD
 ```
 
-A especificação detalhada de matching está em [`../identity/identity-correlation.md`](../identity/identity-correlation.md).
+A especificação detalhada está em [`../identity/identity-correlation.md`](../identity/identity-correlation.md).
 
 ## Política de férias e exceções individuais
 
@@ -199,8 +201,8 @@ Os requisitos acima definem **o que** o sistema deve suportar. Ainda precisam se
 - comportamento quando um afastamento não possui data final;
 - comportamento da conta após cancelamento de admissão;
 - comportamento de acesso quando existe intervalo entre dois vínculos da mesma pessoa;
-- validação do identificador interno permanente da Pessoa na Senior;
-- condições exatas em que CPF poderá ser usado para matching auxiliar;
+- normalização e validação do CPF;
+- estratégia de proteção/persistência da chave CPF no IAM;
 - política de tentativas e backoff antes da emissão de alerta;
 - classificação de severidade por operação de lifecycle;
 - canais e responsáveis pelo recebimento dos alertas;
