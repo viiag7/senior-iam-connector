@@ -17,104 +17,121 @@ Uma mesma pessoa pode possuir diferentes vínculos ao longo do tempo, por exempl
 
 Essas mudanças não devem, por si só, resultar na criação de uma nova conta no AD DS.
 
+## Chave de correlação da pessoa
+
+O **CPF é a única chave autorizada para determinar que dois registros ou vínculos da Senior pertencem à mesma pessoa**.
+
+Nenhum outro atributo pode ser utilizado como fallback ou como evidência suficiente para vincular automaticamente um novo vínculo a uma identidade AD existente.
+
+Em especial, não podem ser utilizados para correlação de pessoa:
+
+- `Person ID` da Senior;
+- matrícula;
+- identificador do vínculo/contrato;
+- nome;
+- e-mail;
+- UPN;
+- `sAMAccountName`;
+- cargo, departamento ou qualquer atributo organizacional.
+
+Esses campos podem ser armazenados para rastreabilidade, provisioning e contexto operacional, mas não determinam a identidade da pessoa.
+
 ## Modelo conceitual
 
 ```text
-Pessoa Senior
-├── Person ID: identificador permanente da pessoa
-├── CPF: identificador pessoal auxiliar
-│
-├── Vínculo A
-│   ├── Tipo: Estagiário
-│   └── Matrícula: 1234
-│
-└── Vínculo B
-    ├── Tipo: CLT
-    └── Matrícula: 9876
+Pessoa
+└── CPF: chave de correlação da identidade
+    |
+    ├── Vínculo A
+    │   ├── Person ID / referência Senior
+    │   ├── Tipo: Estagiário
+    │   └── Matrícula: 1234
+    │
+    └── Vínculo B
+        ├── Person ID / referência Senior
+        ├── Tipo: CLT
+        └── Matrícula: 9876
 
                  |
                  v
 
 Identity IAM
-├── sourcePersonId
+├── CPF correlation key (protegida)
 ├── AD objectGUID
 ├── sAMAccountName
 └── UPN
 ```
 
-A matrícula e demais identificadores do vínculo podem mudar. A associação entre a pessoa e a identidade corporativa deve permanecer.
+A matrícula, o identificador de vínculo e outros identificadores da Senior podem mudar. O CPF é o elemento utilizado para reconhecer que se trata da mesma pessoa.
 
-## Chave primária de correlação
+## Regra de matching
 
-A chave preferencial deve ser um **identificador interno, único, estável e imutável da Pessoa na Senior** (`Person ID` ou equivalente).
-
-Antes de produção, o Discovery deve comprovar que esse identificador:
-
-- identifica a pessoa, e não apenas um vínculo;
-- permanece estável quando a matrícula muda;
-- permanece estável em mudança de tipo de vínculo;
-- permanece estável em transferência de empresa/filial, quando aplicável;
-- permite reconhecer a mesma pessoa em uma recontratação, quando a Senior preservar o cadastro de Pessoa.
-
-Até essa validação, o nome exato do campo permanece **a confirmar**.
-
-## Uso do CPF
-
-O CPF pode ser utilizado como **atributo auxiliar de matching** para reconhecer uma pessoa quando a chave interna ainda não estiver correlacionada.
-
-O CPF **não deve ser a chave técnica principal** se houver um identificador interno estável da Pessoa na Senior.
-
-### Motivos
-
-- CPF é dado pessoal e deve seguir minimização de dados.
-- Não há necessidade de propagá-lo para AD DS, Entra, logs, métricas ou URLs do portal para realizar o lifecycle normal.
-- A utilização de um identificador técnico interno reduz exposição desnecessária de dados pessoais.
-
-### Restrições
-
-O CPF:
-
-- não deve ser persistido no AD DS pelo conector;
-- não deve ser enviado ao Entra Provisioning se não for necessário ao provisioning;
-- não deve aparecer em logs, alertas, correlation IDs ou URLs;
-- não deve ser exibido por padrão no portal de auditoria;
-- deve ser consultado/processado somente quando necessário para matching ou validação de identidade;
-- deve possuir acesso restrito e auditável.
-
-Se futuramente houver necessidade de persistir CPF no banco do IAM, isso exige decisão específica de segurança/privacidade e definição de proteção, retenção e finalidade.
-
-## Estratégia de matching
-
-A ordem conceitual de correlação será:
+A regra é determinística:
 
 ```text
 Novo vínculo recebido
         |
         v
-Existe sourcePersonId já correlacionado?
+CPF válido está presente?
         |
-        +-- SIM --> reutilizar identidade AD existente
+        +-- NÃO --> bloquear automação e gerar alerta
         |
-        +-- NÃO --> procurar possível pessoa existente por matching auxiliar
+        +-- SIM --> existe identidade IAM vinculada a esse CPF?
                         |
-                        +-- correspondência inequívoca --> correlacionar
+                        +-- SIM --> reutilizar a identidade AD existente
                         |
-                        +-- nenhuma correspondência --> nova identidade elegível
+                        +-- NÃO --> criar nova identidade, se elegível
                         |
-                        +-- correspondência ambígua --> bloquear automação e gerar alerta
+                        +-- MAIS DE UMA --> bloquear automação e gerar alerta crítico
 ```
 
-Nome, e-mail, UPN, `sAMAccountName` e matrícula **não podem ser usados isoladamente** como chave primária de pessoa.
+Não existe matching secundário por nome, matrícula, Person ID, e-mail ou qualquer outro atributo.
 
-## Regra — Estagiário para CLT
+## Normalização e proteção do CPF
 
-Quando uma pessoa encerrar um vínculo de estágio e iniciar um vínculo CLT, o sistema deve reaproveitar a identidade corporativa existente quando a correlação de pessoa for inequívoca.
+Embora o CPF seja a chave funcional de correlação, ele é um dado pessoal e deve ser tratado com minimização e proteção.
+
+Antes do matching, o valor deve ser normalizado para um formato canônico, removendo pontuação e aplicando validação apropriada.
+
+A implementação deve evitar propagar o CPF para sistemas que não precisam conhecê-lo. Em particular, por padrão o CPF:
+
+- não deve ser armazenado como atributo visível no AD DS;
+- não deve ser enviado ao Entra Provisioning quando não for necessário para executar o provisioning;
+- não deve aparecer em logs, alertas, correlation IDs ou URLs;
+- não deve ser exibido no portal de auditoria por padrão;
+- não deve ser usado como identificador apresentado ao operador.
+
+O banco do IAM poderá manter uma representação protegida adequada para realizar correlação determinística, desde que a implementação preserve a regra de negócio de que a identidade é vinculada exclusivamente pelo CPF. A estratégia técnica de proteção e persistência será definida na arquitetura de segurança.
+
+## Person ID da Senior
+
+O `Person ID` ou identificador equivalente da Senior pode ser coletado e armazenado como **referência técnica e de auditoria**, quando útil.
+
+Ele não participa da decisão de matching de pessoa.
 
 Exemplo:
 
 ```text
-Pessoa: João Silva
-Person ID: 84572
+CPF 123...89
+   |
+   +-- vínculo estágio: Person ID / matrícula A
+   |
+   +-- vínculo CLT:     Person ID / matrícula B
+   |
+   +--> mesma Identity IAM
+        mesma conta AD
+```
+
+Mesmo que os identificadores internos ou matrículas sejam diferentes, o mesmo CPF determina o reaproveitamento da identidade.
+
+## Regra — Estagiário para CLT
+
+Quando um estagiário encerrar o vínculo e iniciar um vínculo CLT com o **mesmo CPF**, o sistema deve reaproveitar a identidade corporativa existente.
+
+Exemplo:
+
+```text
+CPF: mesmo valor
 
 Vínculo 1
 Tipo: Estagiário
@@ -124,7 +141,7 @@ Matrícula: 10234
         v
 Conta AD: joao.silva
         |
-        | novo vínculo
+        | novo vínculo com mesmo CPF
         v
 Vínculo 2
 Tipo: CLT
@@ -163,55 +180,66 @@ Exemplo:
 31/01  fim do estágio
         -> conta pode ser desabilitada
 
-15/03  início do vínculo CLT
-        -> a mesma conta pode ser reativada
+15/03  início do vínculo CLT com mesmo CPF
+        -> a mesma conta deve ser reativada conforme regra de lifecycle
 ```
 
 A decisão de manter, desabilitar ou reativar acesso durante a transição depende das regras de lifecycle e das datas efetivas dos vínculos.
 
-## Duplicidade e ambiguidade
+## CPF ausente, inválido ou duplicado
 
-Quando houver conflito de identidade, o sistema deve falhar de forma segura.
+Como não existe fallback de matching, situações envolvendo CPF devem falhar de forma segura.
 
-Exemplos:
+| Situação | Comportamento |
+|---|---|
+| CPF ausente | Não provisionar/correlacionar; registrar falha e alertar |
+| CPF inválido | Não provisionar/correlacionar; registrar falha e alertar |
+| Mesmo CPF associado a uma identidade IAM | Reutilizar a identidade existente |
+| Mesmo CPF associado a mais de uma identidade IAM | Bloquear automação e gerar alerta crítico |
+| CPF diferente de uma identidade existente aparentemente semelhante | Não correlacionar automaticamente |
 
-- dois registros de Pessoa com mesmo CPF;
-- uma chave de Pessoa associada a mais de uma conta AD;
-- CPF encontrado em identidade existente, mas `sourcePersonId` incompatível;
-- mais de uma conta candidata no AD.
+Nome, matrícula, e-mail ou similaridade de dados nunca devem substituir a ausência ou divergência de CPF.
 
-Nesses casos:
+## Matching técnico com o AD DS
 
-1. não criar nova conta automaticamente;
-2. não alterar contas candidatas automaticamente;
-3. registrar a condição;
-4. gerar alerta operacional;
-5. exigir investigação antes de continuar o fluxo.
+O CPF define **quem é a pessoa** no domínio IAM. Após a primeira correlação, o sistema deve manter a associação entre essa identidade e o `objectGUID` da conta AD.
+
+Assim, operações posteriores não precisam procurar contas no AD por CPF; elas utilizam a identidade IAM já correlacionada:
+
+```text
+CPF
+  -> Identity IAM
+      -> AD objectGUID
+```
+
+A forma de materializar a chave técnica usada pelo Entra inbound provisioning será definida na arquitetura, sem alterar a regra funcional de correlação exclusiva por CPF.
 
 ## Auditoria
 
-Toda correlação ou mudança relevante deve permitir rastrear:
+Toda correlação ou reutilização deve permitir rastrear:
 
-- `sourcePersonId`;
+- referência técnica da identidade IAM;
+- Person ID da Senior, quando disponível;
 - identificador do vínculo/matrícula relevante;
 - AD `objectGUID`;
 - tipo de operação;
-- motivo do matching/reutilização;
+- motivo da reutilização (`same CPF`);
 - timestamp;
 - correlation ID;
 - resultado.
 
-O CPF, quando utilizado como matching auxiliar, não deve ser incluído na evidência operacional em texto aberto.
+O valor do CPF não deve aparecer em texto aberto na evidência operacional. O sistema pode registrar que a correlação foi realizada por CPF sem registrar o próprio número.
 
 ## Critérios de aceite da decisão
 
 Antes de marcar esta decisão como `Accepted`:
 
-- [ ] confirmar o identificador interno da Pessoa na API Senior;
-- [ ] comprovar estabilidade em mudança Estagiário → CLT;
-- [ ] comprovar comportamento em recontratação;
-- [ ] identificar se matrícula pertence ao vínculo e pode mudar;
-- [ ] validar se o CPF está disponível à conta técnica IAM sem liberar outros dados indevidos;
-- [ ] definir o atributo utilizado pelo Entra para matching;
-- [ ] definir como `sourcePersonId` será persistido no IAM e/ou AD;
-- [ ] testar duplicidade e matching ambíguo.
+- [ ] confirmar o campo exato de CPF na API Senior;
+- [ ] confirmar que todos os vínculos elegíveis possuem CPF disponível para a integração;
+- [ ] validar comportamento Estagiário → CLT com mudança de matrícula;
+- [ ] validar comportamento em recontratação;
+- [ ] definir normalização e validação do CPF;
+- [ ] definir proteção/persistência da chave de correlação no IAM;
+- [ ] definir a chave técnica utilizada entre IAM, Entra e AD DS;
+- [ ] testar CPF ausente, inválido e duplicado;
+- [ ] testar que nenhum fallback por nome, matrícula, Person ID ou e-mail é realizado.
