@@ -48,7 +48,7 @@ A ordem de preferência conceitual é:
 
 A implementação final dependerá das capacidades efetivamente disponíveis no ambiente Senior da organização.
 
-## Regra funcional proposta
+## Regra funcional definida
 
 Quando uma identidade estiver em `PRE_PROVISIONED` e for confirmada a exclusão/cancelamento da admissão na fonte autoritativa:
 
@@ -63,13 +63,32 @@ ADMISSION_CANCELLED
 O IAM deve:
 
 - impedir a habilitação da conta na data de admissão anteriormente prevista;
-- manter a conta AD desabilitada;
+- **garantir que a conta esteja desabilitada no AD DS**;
+- registrar no AD DS os metadados de lifecycle/motivo/data definidos no `attribute-mapping.md`;
 - não excluir automaticamente o objeto do AD DS no MVP;
 - preservar CPF/correlação da pessoa e o vínculo com o `objectGUID` criado;
 - cancelar qualquer ação futura agendada de ativação relacionada à admissão excluída;
 - registrar o evento e a origem da confirmação de cancelamento;
 - manter a identidade disponível para auditoria;
 - permitir reutilização da mesma conta caso a pessoa volte a ser cadastrada posteriormente com o mesmo CPF, conforme política de lifecycle e correlação.
+
+Metadados conceituais esperados no AD DS:
+
+```text
+iamLifecycleState = ADMISSION_CANCELLED
+iamDisableReason  = ADMISSION_CANCELLED
+iamDisabledAt     = <data/hora efetiva da desabilitação>
+```
+
+Os nomes físicos desses atributos ainda devem ser definidos no POC/mapping.
+
+## Relação com política de retenção
+
+Uma conta em `ADMISSION_CANCELLED` estará desabilitada e poderá futuramente participar de uma política de retenção/limpeza, mas a exclusão automática definitiva **não faz parte do MVP**.
+
+Quando a política de retenção for aprovada, ela deverá considerar explicitamente `iamLifecycleState` e `iamDisableReason`, e não apenas o fato de a conta estar desabilitada há mais de 30 dias.
+
+Isso evita que uma regra genérica de limpeza trate da mesma forma uma admissão cancelada e uma pessoa temporariamente suspensa por férias/afastamento.
 
 ## Ausência em consulta não é exclusão confirmada
 
@@ -96,7 +115,7 @@ Consulta/reconciliação concluída com sucesso e com abrangência válida?
         |
         +-- SIM --> existe evidência confiável de exclusão/cancelamento?
                         |
-                        +-- SIM --> ADMISSION_CANCELLED
+                        +-- SIM --> ADMISSION_CANCELLED + conta desabilitada
                         |
                         +-- NÃO --> manter estado e investigar/reconciliar
 ```
@@ -133,7 +152,8 @@ O cancelamento deve permitir rastrear:
 - origem da detecção (`event`, `webhook`, `integration_pending`, `delta`, `reconciliation` ou equivalente);
 - data/hora da exclusão quando fornecida pela Senior;
 - data/hora do processamento no IAM;
-- ação executada no AD DS;
+- ação de disable executada no AD DS;
+- `iamDisabledAt` e `iamDisableReason` lógicos;
 - correlation ID;
 - resultado.
 
