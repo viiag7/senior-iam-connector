@@ -8,6 +8,8 @@
 
 - O Senior Gestão de Pessoas é a fonte autoritativa do estado do vínculo e dos eventos de RH do colaborador.
 - O sistema deve interpretar estados e datas de RH e refletir o lifecycle esperado da identidade no AD DS.
+- A conta corporativa representa a **pessoa**, e não um vínculo trabalhista específico.
+- Mudanças de vínculo não devem gerar nova identidade quando a pessoa já possuir uma conta corporativa correlacionada de forma inequívoca.
 - O comportamento deve ser determinístico, auditável e idempotente.
 - O MVP não deve depender de abertura manual de tickets para operações normais de lifecycle.
 - Dados fora do escopo IAM, como remuneração e folha, não fazem parte do contrato funcional.
@@ -54,6 +56,10 @@
 | RF-034 | O sistema deve permitir classificar alertas por severidade conforme o impacto da operação de lifecycle, permitindo tratamento prioritário de falhas de desabilitação, reativação e criação de identidade. |
 | RF-035 | O sistema deve manter rastreabilidade entre uma falha de provisionamento, suas tentativas, o alerta gerado, o colaborador afetado e a resolução ou reprocessamento correspondente. |
 | RF-036 | O sistema deve permitir detectar e alertar divergências persistentes encontradas pela reconciliação quando o estado real do AD DS não convergir para o estado esperado definido pelo lifecycle. |
+| RF-037 | O sistema deve associar a identidade corporativa à pessoa da Senior, e não exclusivamente à matrícula ou ao vínculo trabalhista. |
+| RF-038 | Quando a mesma pessoa iniciar um novo vínculo, incluindo transições como Estagiário → CLT, o sistema deve reutilizar a conta AD existente quando a correlação for inequívoca, preservando a identidade e atualizando os atributos do novo vínculo. |
+| RF-039 | O sistema deve utilizar preferencialmente um identificador interno estável da Pessoa na Senior como chave principal de correlação; CPF poderá ser utilizado apenas como mecanismo auxiliar de matching quando necessário e aprovado. |
+| RF-040 | Em caso de matching de pessoa ambíguo ou conflitante, o sistema não deve criar, reativar ou alterar automaticamente uma conta candidata; deve registrar a condição e gerar alerta para investigação. |
 
 ## Modelo de estados
 
@@ -115,7 +121,40 @@ ACTIVE
 TERMINATED
 ```
 
-Uma recontratação poderá resultar em `TERMINATED -> ACTIVE`, passar novamente por `PRE_PROVISIONED` ou exigir novo provisionamento, conforme a política de Rehire e a existência da identidade anterior.
+Uma recontratação ou mudança de vínculo poderá reutilizar a identidade existente quando a pessoa for correlacionada de forma inequívoca. Dependendo das datas e regras de lifecycle, a conta poderá permanecer ativa, ser temporariamente desabilitada entre vínculos ou ser reativada no início do novo vínculo.
+
+## Identidade da pessoa e múltiplos vínculos
+
+O sistema deve distinguir conceitualmente:
+
+```text
+Pessoa
+  └── identidade corporativa persistente
+
+Vínculo
+  └── relação de trabalho vigente em determinado período
+```
+
+Exemplo esperado:
+
+```text
+Pessoa: João Silva
+Person ID: 84572
+
+Estágio / matrícula 10234
+        |
+        | fim do estágio
+        v
+Conta AD existente
+        |
+        | novo vínculo
+        v
+CLT / matrícula 19873
+
+Resultado: reutilizar a mesma conta AD
+```
+
+A especificação detalhada de matching está em [`../identity/identity-correlation.md`](../identity/identity-correlation.md).
 
 ## Política de férias e exceções individuais
 
@@ -159,6 +198,9 @@ Os requisitos acima definem **o que** o sistema deve suportar. Ainda precisam se
 - comportamento quando a data de retorno é alterada;
 - comportamento quando um afastamento não possui data final;
 - comportamento da conta após cancelamento de admissão;
+- comportamento de acesso quando existe intervalo entre dois vínculos da mesma pessoa;
+- validação do identificador interno permanente da Pessoa na Senior;
+- condições exatas em que CPF poderá ser usado para matching auxiliar;
 - política de tentativas e backoff antes da emissão de alerta;
 - classificação de severidade por operação de lifecycle;
 - canais e responsáveis pelo recebimento dos alertas;
