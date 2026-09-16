@@ -15,7 +15,8 @@ A Senior X permite controlar acesso a telas, APIs e processos por recursos de pe
 
 Somente após validação no `attribute-mapping.md`, o conector poderá consultar dados como:
 
-- identificador estável da pessoa;
+- CPF, exclusivamente para correlação de identidade da pessoa;
+- identificadores técnicos da Senior para referência e auditoria;
 - matrícula;
 - nome;
 - nome preferido, se necessário;
@@ -31,6 +32,23 @@ Somente após validação no `attribute-mapping.md`, o conector poderá consulta
 - data de desligamento;
 - eventos de férias/afastamento estritamente necessários para decisão de lifecycle.
 
+## Regra específica para CPF
+
+O CPF é a **chave funcional exclusiva de correlação da pessoa** no IAM e, portanto, faz parte do conjunto mínimo de dados necessários ao sistema.
+
+Isso não significa que o valor deva ser exposto ou replicado livremente.
+
+O CPF:
+
+- deve ser usado somente para a finalidade de correlação de identidade;
+- deve ser normalizado e validado antes do uso;
+- não deve aparecer em logs, alertas, correlation IDs ou URLs;
+- não deve ser exibido no portal de auditoria por padrão;
+- não deve ser persistido como atributo visível no AD DS;
+- não deve ser enviado ao Entra Provisioning quando não houver necessidade técnica;
+- deve ter sua persistência no banco IAM protegida conforme decisão arquitetural específica;
+- não pode ser substituído por matching automático baseado em nome, matrícula, Person ID, e-mail ou outros atributos.
+
 ## Dados proibidos no escopo inicial
 
 O conector não deve possuir acesso funcional nem técnico, quando a plataforma permitir segregação, a:
@@ -44,7 +62,7 @@ O conector não deve possuir acesso funcional nem técnico, quando a plataforma 
 - dados fiscais sem relação necessária com identidade;
 - documentos pessoais sem justificativa IAM.
 
-Também é proibido registrar esses dados em logs, traces, métricas, cache ou banco de estado.
+Também é proibido registrar esses dados em logs, traces, métricas, cache ou banco de estado fora das exceções explicitamente aprovadas pelo contrato IAM. O CPF é uma exceção necessária e restrita à correlação de identidade, sujeito aos controles acima.
 
 ## Conta técnica no Senior
 
@@ -87,11 +105,14 @@ Exemplo recomendado:
 
 ```text
 correlationId=...
-sourcePersonId=...
+identityId=...
+sourceReference=...
 operation=Provision
 status=Accepted
 provisioningJobId=...
 ```
+
+O CPF não deve ser registrado em texto aberto no log operacional.
 
 Evitar registrar payload completo por padrão.
 
@@ -141,11 +162,13 @@ Antes do go-live:
 - [ ] Papel IAM exclusivo criado no Senior.
 - [ ] Permissões efetivas documentadas.
 - [ ] Teste comprovando ausência de acesso a remuneração/folha.
+- [ ] Acesso ao CPF limitado à finalidade de correlação.
+- [ ] Estratégia de proteção/persistência do CPF aprovada.
+- [ ] Logs, alertas e portal sem CPF em texto aberto.
 - [ ] Credenciais fora do código/repositório.
 - [ ] Permissões Graph mínimas documentadas.
 - [ ] Provisioning Agent saudável e monitorado.
 - [ ] Ambiente de teste separado de produção.
-- [ ] Logs sem dados sensíveis desnecessários.
 - [ ] Rotação e revogação de credenciais testadas.
 - [ ] Runbook para comprometimento da credencial.
 - [ ] Centralização de audit logs definida.
@@ -160,5 +183,6 @@ Antes do go-live:
 
 - `docs/requirements/functional-requirements.md`
 - `docs/requirements/audit-observability.md`
+- `docs/identity/identity-correlation.md`
 - Senior — Papéis e permissões HCM: https://documentacao.senior.com.br/seniorxplatform/manual-do-usuario/hcm/papeis-e-permissoes/
 - Microsoft Learn — API-driven inbound provisioning concepts: https://learn.microsoft.com/en-us/entra/identity/app-provisioning/inbound-provisioning-api-concepts
