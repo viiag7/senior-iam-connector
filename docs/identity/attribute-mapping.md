@@ -10,20 +10,20 @@
 - Apenas atributos necessários para identidade e lifecycle entram no conector.
 - O Senior é authoritative source para os campos definidos como `Senior`.
 - A conta corporativa representa a **pessoa**, e não o vínculo trabalhista.
+- O **CPF é a única chave autorizada para correlacionar a pessoa entre vínculos**.
+- `Person ID`, matrícula, nome, e-mail, UPN e outros identificadores não podem ser usados como fallback de correlação da pessoa.
 - Campos calculados pelo IAM devem possuir regra determinística e documentada.
-- O identificador de correlation não pode depender de nome, e-mail, matrícula ou outro valor sujeito a alteração.
-- A chave preferencial de correlation é o identificador interno estável da Pessoa na Senior (`Person ID` ou equivalente), sujeito à validação no Discovery.
-- O CPF pode ser utilizado apenas como matching auxiliar e não deve ser propagado ao AD DS, Entra, logs ou portal quando não houver necessidade técnica.
+- O CPF deve ser protegido e não deve ser propagado ao AD DS, Entra, logs ou portal quando não houver necessidade técnica.
 - Dados ausentes obrigatórios geram erro de validação e não devem produzir alterações parciais inseguras.
 
 Ver também: [`identity-correlation.md`](./identity-correlation.md).
 
 ## Mapping inicial
 
-| Informação | Campo Senior | SCIM / Inbound provisioning | AD DS | Obrigatório | Authority | Status |
+| Informação | Campo Senior | Uso no IAM / SCIM | AD DS | Obrigatório | Authority | Status |
 |---|---|---|---|---|---|---|
-| Identificador imutável da Pessoa | **Person ID / campo a confirmar** | `externalId` ou atributo dedicado | atributo dedicado / matching | Sim | Senior | **Decisão em validação** |
-| CPF | **A confirmar** | **Não enviar por padrão** | **Não persistir** | Condicional | Senior | Matching auxiliar somente |
+| CPF | **A confirmar** | **Chave exclusiva de correlação da pessoa; representação protegida no IAM** | **Não persistir por padrão** | Sim | Senior | **Decisão funcional definida; campo técnico a validar** |
+| Person ID / referência interna Senior | **A confirmar** | Referência técnica/auditoria; não usar para matching de pessoa | Não necessário por padrão | Não | Senior | A validar |
 | Matrícula / identificador do vínculo | **A confirmar** | atributo enterprise/custom | `employeeNumber` | Sim | Senior | A validar |
 | Primeiro nome | **A confirmar** | `name.givenName` | `givenName` | Sim | Senior | A validar |
 | Sobrenome | **A confirmar** | `name.familyName` | `sn` | Sim | Senior | A validar |
@@ -42,6 +42,22 @@ Ver também: [`identity-correlation.md`](./identity-correlation.md).
 | Data de desligamento | **A confirmar** | `employeeLeaveDateTime` quando aplicável | custom/extension attribute | Condicional | Senior | A validar |
 | Localidade/unidade | **A confirmar** | custom | `physicalDeliveryOfficeName` ou custom | Não | Senior | A validar |
 
+## Tratamento do CPF
+
+O CPF faz parte do contrato IAM **exclusivamente porque é a chave de identidade da pessoa**.
+
+Seu uso deve seguir minimização de exposição:
+
+- normalizar e validar antes do matching;
+- não usar o valor em texto aberto como correlation ID;
+- não registrar o valor em logs ou alertas;
+- não exibir no portal de auditoria por padrão;
+- não gravar como atributo visível no AD DS;
+- não enviar ao Entra Provisioning se o provisioning técnico puder operar usando a correlação já mantida pelo IAM;
+- proteger a representação persistida no banco do IAM conforme decisão de segurança específica.
+
+O fato de o CPF ser a chave funcional não implica que o número precise circular por todos os componentes. Após a correlação, o IAM deve manter a associação com o objeto AD correspondente.
+
 ## Dados explicitamente fora do contrato IAM
 
 O conector não deve solicitar, persistir ou registrar em logs os seguintes grupos de dados:
@@ -55,9 +71,9 @@ O conector não deve solicitar, persistir ou registrar em logs os seguintes grup
 - informações fiscais não necessárias para identidade;
 - documentos pessoais sem necessidade técnica comprovada.
 
-O CPF é uma exceção controlada apenas para **matching auxiliar**, quando necessário. Seu uso não autoriza persistência ou exposição fora do fluxo de correlação aprovado.
+O CPF é a exceção necessária para correlação de identidade, com finalidade limitada e controles específicos.
 
-Caso algum dado sensível seja proposto futuramente, a inclusão deve passar por nova decisão arquitetural e revisão de segurança/privacidade.
+Caso algum outro dado sensível seja proposto futuramente, a inclusão deve passar por nova decisão arquitetural e revisão de segurança/privacidade.
 
 ## Regras de transformação a definir
 
@@ -85,7 +101,7 @@ Precisamos definir:
 
 ### Manager
 
-O manager deve ser resolvido usando uma chave estável da pessoa gestora e somente aplicado quando a identidade correspondente estiver correlacionada de forma inequívoca.
+O manager deve ser aplicado somente quando a identidade correspondente da pessoa gestora puder ser resolvida de forma inequívoca. A implementação não deve criar uma segunda regra de correlação de pessoas diferente da definida em `identity-correlation.md`.
 
 ## Critério para aprovar um atributo
 
@@ -105,8 +121,9 @@ Cada atributo só entra em produção quando estas perguntas estiverem respondid
 
 - Identificar endpoints reais do Senior.
 - Testar conta técnica com permissões mínimas.
-- Confirmar o `Person ID` (ou equivalente) e sua estabilidade em transferência, mudança de vínculo, desligamento e recontratação.
+- Confirmar o campo de CPF e sua disponibilidade para todos os vínculos elegíveis.
 - Confirmar que matrícula identifica o vínculo e pode mudar sem representar nova pessoa.
-- Validar uso restrito do CPF como matching auxiliar.
+- Definir normalização, validação e proteção da chave CPF no IAM.
+- Definir a chave técnica usada pelo IAM para referenciar a conta já correlacionada no Entra/AD DS.
 - Exportar os default attribute mappings da aplicação Entra de laboratório.
 - Validar os atributos suportados no AD DS de destino.
