@@ -11,10 +11,12 @@
 2. O sistema deve verificar unicidade no AD DS antes de criar ou renomear uma conta.
 3. O naming deve ser determinístico: para a mesma entrada e o mesmo estado do diretório, a regra deve produzir o mesmo resultado.
 4. Após a criação da conta, `sAMAccountName` e UPN são considerados **estáveis** e não devem ser recalculados por alterações de cargo, departamento, gestor, matrícula, vínculo ou outras mudanças organizacionais.
-5. A alteração do nome de login só poderá ocorrer quando houver uma mudança de nome autoritativo na Senior e a política de rename aprovada determinar essa alteração.
-6. Uma alteração de nome nunca deve criar uma nova identidade. A conta existente deve ser atualizada diretamente no AD DS, preservando o mesmo objeto e a mesma correlação IAM.
+5. Uma mudança do nome de usuário/nome autoritativo na Senior pode iniciar uma avaliação de rename conforme política aprovada.
+6. Uma alteração de naming nunca deve criar uma nova identidade; a mesma conta AD e a mesma correlação IAM devem ser preservadas.
 7. Antes de qualquer rename, o novo `sAMAccountName` e UPN devem passar novamente pela validação de unicidade.
 8. Rehire ou mudança de vínculo da mesma pessoa não deve, por si só, recalcular ou alterar o nome de conta existente.
+9. **Atualização direta no AD DS não faz parte do fluxo normal de naming.** Ela somente poderá ser utilizada como exceção quando o nome gerado automaticamente não atender às regras aprovadas e for necessário definir um nome diferente.
+10. Toda exceção de naming aplicada diretamente no AD DS deve ser registrada pelo IAM para que reconciliações futuras preservem o valor aprovado e não o sobrescrevam automaticamente.
 
 ## Padrão inicial
 
@@ -160,7 +162,7 @@ Esse valor é metadado de controle do IAM e não substitui o nome autoritativo d
 
 ## Alteração de nome na Senior
 
-Uma mudança do nome autoritativo na Senior é o único gatilho funcional atualmente previsto para avaliar alteração automática de `sAMAccountName` e UPN.
+Uma mudança do nome autoritativo/nome de usuário na Senior é o único gatilho funcional atualmente previsto para avaliar alteração de `sAMAccountName` e UPN após a criação.
 
 Fluxo conceitual:
 
@@ -178,7 +180,7 @@ Política determina rename?
                   verificar unicidade
                          |
                          v
-                  atualizar a MESMA conta AD
+                  atualizar a MESMA identidade
 ```
 
 A alteração deve preservar:
@@ -194,21 +196,6 @@ O rename nunca deve ser interpretado como criação de uma nova pessoa.
 ### Colisão durante rename
 
 Se o novo candidato já existir, o mesmo algoritmo de colisão utilizado na criação deve ser aplicado.
-
-Exemplo:
-
-```text
-Antes:
-maria.souza
-
-Nome novo na Senior:
-Maria Oliveira
-
-maria.oliveira já existe
-        |
-        v
-aplicar próxima combinação permitida
-```
 
 ## sAMAccountName e UPN
 
@@ -229,35 +216,59 @@ Contudo, são atributos distintos e suas restrições técnicas devem ser respei
 - comportamento de aliases/e-mail quando ocorrer rename;
 - necessidade de preservar aliases antigos após mudança de nome.
 
-## Atualização direta no AD DS
+## Exceção — atualização direta no AD DS
 
-Quando houver rename autorizado, a operação deve atualizar a conta AD já correlacionada.
+A atualização direta de `sAMAccountName`/UPN no AD DS será tratada como **exceção**, e não como mecanismo normal do processo de provisionamento.
 
-O sistema não deve:
+Ela poderá ser utilizada quando:
 
-- procurar uma pessoa nova;
+- o nome calculado automaticamente pelo algoritmo não atender às regras ou necessidades aprovadas;
+- for necessário atribuir um nome diferente do resultado gerado automaticamente;
+- a exceção estiver devidamente autorizada conforme processo a ser definido com o time.
+
+Exemplo conceitual:
+
+```text
+Nome gerado automaticamente
+        |
+        v
+nao atende a regra/caso excepcional
+        |
+        v
+nome alternativo aprovado
+        |
+        v
+atualização direta no AD DS
+        |
+        v
+IAM registra o naming efetivo
+```
+
+Após essa alteração, o valor efetivamente aprovado passa a ser tratado como o naming atual da identidade e **não deve ser sobrescrito por reconciliação normal**.
+
+A atualização direta no AD DS não deve:
+
 - criar outro objeto AD;
 - alterar a correlação por CPF;
-- tratar o rename como Rehire;
-- perder o histórico anterior do username.
+- ser usada para mudanças rotineiras de cargo, departamento, vínculo ou matrícula;
+- provocar recálculo automático posterior do username;
+- ser utilizada como mecanismo de correção informal fora do processo auditável.
 
 O audit trail deve registrar, no mínimo:
 
 - identidade afetada;
 - `objectGUID` ou chave técnica equivalente;
-- valor anterior de `sAMAccountName`;
-- valor novo de `sAMAccountName`;
-- valor anterior de UPN;
-- valor novo de UPN;
-- nome autoritativo anterior;
-- nome autoritativo novo;
+- valor calculado originalmente;
+- valor efetivamente aplicado;
+- responsável/autorização da exceção, quando disponível;
+- justificativa;
 - timestamp;
 - correlation ID;
 - resultado da operação.
 
 ## Falhas e segurança
 
-Se o sistema não conseguir garantir unicidade ou realizar o rename com segurança:
+Se o sistema não conseguir garantir unicidade ou realizar uma alteração com segurança:
 
 1. não criar uma segunda conta;
 2. não aplicar alteração parcial insegura;
@@ -280,6 +291,8 @@ Antes de aprovar a política, devem ser testados:
 - Estagiário → CLT mantendo naming existente;
 - alteração de nome na Senior sem colisão;
 - alteração de nome na Senior com colisão;
+- exceção em que o nome gerado não atende à regra e é aplicado nome diferente diretamente no AD DS;
+- reconciliação preservando o naming definido por exceção;
 - retry de criação sem gerar outro username;
 - retry de rename sem gerar resultados diferentes;
 - falha entre atualização de `sAMAccountName` e UPN;
@@ -298,6 +311,8 @@ Antes de aprovar a política, devem ser testados:
 - [ ] Política de aliases após rename.
 - [ ] Se toda mudança de nome autoritativo gera rename automático ou se haverá um indicador específico na Senior/política IAM.
 - [ ] Comportamento em alterações apenas ortográficas/correções pequenas.
+- [ ] Quem pode autorizar uma exceção de naming aplicada diretamente no AD DS.
+- [ ] Como o IAM registrará e preservará um naming definido por exceção.
 
 ## Referências internas
 
