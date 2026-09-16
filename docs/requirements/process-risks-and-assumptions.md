@@ -1,10 +1,10 @@
 # Riscos e Premissas do Processo Atual
 
 - **Status:** Draft para discussão
-- **Escopo:** Senior IAM Connector — onboarding e pré-provisionamento
-- **Objetivo:** registrar particularidades do processo atual que podem limitar a automação, gerar riscos operacionais ou exigir mudanças de processo fora do código da integração.
+- **Escopo:** Senior IAM Connector — onboarding, pré-provisionamento e lifecycle
+- **Objetivo:** registrar particularidades do processo atual que podem limitar a automação, gerar riscos operacionais ou exigir mudanças de processo ou regras de negócio fora do código da integração.
 
-> Este documento não redefine o escopo técnico do conector. Ele registra dependências do processo de RH que precisam ser consideradas para que o pré-provisionamento e o onboarding funcionem dentro do prazo esperado.
+> Este documento não redefine o escopo técnico do conector. Ele registra dependências e particularidades do processo de RH que precisam ser consideradas para que o lifecycle funcione corretamente.
 
 ## Processo atual — recrutamento até cadastro no Senior
 
@@ -59,7 +59,7 @@ mas o processo não forneceu antecedência suficiente
 para o onboarding.
 ```
 
-## Limitação técnica importante
+### Limitação técnica importante
 
 Sem integração com o Quickin ou outra fonte anterior à Senior, o Senior IAM Connector **não possui como detectar tecnicamente um candidato que ainda não foi cadastrado na Senior**.
 
@@ -67,7 +67,7 @@ Portanto, nenhuma lógica interna do conector consegue compensar integralmente u
 
 O sistema pode medir o tempo disponível após o registro aparecer na Senior, mas não consegue inferir que existe uma futura admissão ainda ausente da Senior.
 
-## Impactos potenciais
+### Impactos potenciais
 
 Um cadastro tardio pode causar:
 
@@ -78,7 +78,7 @@ Um cadastro tardio pode causar:
 - aumento de tratativas manuais e urgentes entre RH e TI;
 - falsa percepção de falha da integração quando a causa real é a antecedência insuficiente do dado de origem.
 
-## Escopo atual
+### Escopo atual
 
 Neste momento:
 
@@ -88,11 +88,9 @@ Neste momento:
 - o provisionamento continuará sendo iniciado a partir da Senior;
 - o risco de antecedência deve ser tratado inicialmente por processo, governança e monitoramento.
 
-## Alternativas para discussão
+### Alternativas para discussão
 
-As seguintes alternativas devem ser avaliadas com RH, Recrutamento, TI/IAM e responsáveis pelo onboarding antes de definir uma solução final.
-
-### 1. SLA para cadastro antecipado na Senior
+#### 1. SLA para cadastro antecipado na Senior
 
 Definir um prazo mínimo para que uma admissão confirmada seja cadastrada na Senior.
 
@@ -105,13 +103,13 @@ Cadastro obrigatório na Senior: até D-5
 
 O número de dias ainda deve ser definido conforme o tempo real necessário para preparar acessos e ativos.
 
-### 2. Tornar o cadastro na Senior um marco formal do onboarding
+#### 2. Tornar o cadastro na Senior um marco formal do onboarding
 
 A confirmação do processo de contratação pode incluir explicitamente a obrigação de cadastrar a admissão na Senior com antecedência suficiente para iniciar o onboarding técnico.
 
 A automação depende desse marco para começar.
 
-### 3. Indicador de antecedência
+#### 3. Indicador de antecedência
 
 O IAM pode registrar, para cada Joiner:
 
@@ -134,19 +132,19 @@ OnboardingReadiness: LATE_SOURCE_REGISTRATION
 
 O nome final do indicador e sua classificação ainda devem ser definidos.
 
-### 4. Alerta de cadastro tardio
+#### 4. Alerta de cadastro tardio
 
 Quando um novo Joiner aparecer na Senior com antecedência menor que a janela definida, o sistema pode gerar um aviso operacional informando que o tempo disponível para onboarding está abaixo do esperado.
 
 Esse alerta não corrige o cadastro tardio, mas dá visibilidade imediata ao risco.
 
-### 5. Revisão manual de Quickin x Senior como controle de processo
+#### 5. Revisão manual de Quickin x Senior como controle de processo
 
 Enquanto não houver integração com o Quickin, RH/Recrutamento pode adotar um controle operacional para confirmar que candidatos já aprovados e com admissão prevista foram efetivamente cadastrados na Senior dentro do SLA.
 
 Esse controle é externo ao Senior IAM Connector.
 
-## Alternativa não recomendada no MVP
+### Alternativa não recomendada no MVP
 
 Criar contas no AD com base em informações manuais, planilhas, e-mails ou dados não autoritativos antes do cadastro na Senior adicionaria uma segunda origem de identidade e aumentaria o risco de:
 
@@ -158,7 +156,7 @@ Criar contas no AD com base em informações manuais, planilhas, e-mails ou dado
 
 Por isso, essa alternativa não deve ser adotada sem uma decisão arquitetural específica.
 
-## Decisões necessárias com o time
+### Decisões necessárias com o time
 
 - [ ] Qual antecedência mínima é necessária para o onboarding técnico?
 - [ ] Em qual momento do processo o RH já possui informação suficiente para cadastrar a admissão na Senior?
@@ -169,14 +167,173 @@ Por isso, essa alternativa não deve ser adotada sem uma decisão arquitetural e
 - [ ] Como tratar admissões urgentes legitimamente cadastradas fora do prazo?
 - [ ] Existe algum processo operacional atual que possa comparar Quickin e Senior sem integrar tecnicamente os dois sistemas?
 
-## Diretriz provisória
-
-Até nova decisão:
+### Diretriz provisória
 
 > O Senior IAM Connector inicia o processo somente quando a admissão estiver disponível na Senior. A automação não garante a preparação antecipada do onboarding quando o cadastro na fonte autoritativa ocorrer fora da janela mínima necessária. O risco deve ser medido, auditado e tratado inicialmente por melhoria de processo, sem ampliar o escopo do MVP para integração com o Quickin.
+
+---
+
+## Risco identificado — múltiplos vínculos simultâneos para a mesma pessoa
+
+Uma mesma pessoa pode possuir **mais de um vínculo ativo simultaneamente** na organização, por exemplo:
+
+```text
+Pessoa / mesmo CPF
+├── Vínculo A: CLT — ACTIVE
+└── Vínculo B: PJ  — ACTIVE
+
+              |
+              v
+       uma única Identity IAM
+              |
+              v
+        uma única conta AD
+```
+
+Esse cenário é diferente de uma simples mudança de vínculo, como Estagiário -> CLT, porque os vínculos podem coexistir durante o mesmo período.
+
+### Risco funcional
+
+Se o IAM tratar cada vínculo isoladamente, uma alteração em apenas um deles pode produzir uma ação incorreta sobre a identidade da pessoa.
+
+Exemplo crítico:
+
+```text
+CPF: mesma pessoa
+
+CLT: TERMINATED
+PJ:  ACTIVE
+
+Implementação incorreta:
+CLT terminou -> desabilitar conta AD
+
+Resultado:
+a pessoa perde acesso apesar de ainda possuir
+outro vínculo ativo e elegível.
+```
+
+Portanto, **o lifecycle da conta não pode ser derivado cegamente do estado de um único vínculo** quando a pessoa possuir múltiplos vínculos.
+
+### Impactos potenciais
+
+Sem uma regra explícita para múltiplos vínculos, podem ocorrer:
+
+- desabilitação indevida da conta quando apenas um dos vínculos é encerrado;
+- reativação indevida por um vínculo quando outro vínculo deveria bloquear acesso;
+- duplicidade de conta caso dois vínculos do mesmo CPF sejam processados como pessoas diferentes;
+- conflito de atributos como matrícula, cargo, departamento, gestor, empresa/filial, centro de custo e tipo de vínculo;
+- oscilações de atributos no AD conforme vínculos diferentes sejam processados em momentos distintos;
+- comportamento não determinístico na reconciliação;
+- auditoria difícil de explicar, pois uma ação sobre a identidade pode ter sido causada por apenas um dos vários vínculos existentes.
+
+### Modelo conceitual necessário
+
+A identidade deve representar a pessoa, enquanto os vínculos devem ser tratados como entidades relacionadas à mesma identidade:
+
+```text
+Pessoa / CPF
+      |
+      v
+Identity IAM
+      |
+      +--> Employment A / CLT
+      |
+      +--> Employment B / PJ
+      |
+      +--> Employment C / outro vínculo, quando aplicável
+      |
+      v
+Estado efetivo da identidade
+calculado a partir do conjunto de vínculos
+```
+
+A existência de múltiplos vínculos **não altera a regra de correlação por CPF**: o mesmo CPF continua representando uma única pessoa e uma única identidade corporativa.
+
+### Casos que precisam de regra de negócio
+
+#### Encerramento de apenas um vínculo
+
+Exemplo:
+
+```text
+Antes:
+CLT = ACTIVE
+PJ  = ACTIVE
+Identity = ACTIVE
+
+Depois:
+CLT = TERMINATED
+PJ  = ACTIVE
+```
+
+A conta **não deve ser automaticamente tratada como `TERMINATED`** apenas porque o vínculo CLT terminou. A regra final deve considerar se ainda existe outro vínculo ativo e elegível que justifique manutenção do acesso.
+
+#### Suspensão de apenas um vínculo
+
+Exemplo:
+
+```text
+CLT = TEMPORARILY_SUSPENDED
+PJ  = ACTIVE
+```
+
+Ainda precisa ser decidido se a identidade permanece `ACTIVE` pelo vínculo PJ ou se alguma situação de suspensão possui precedência global sobre todos os vínculos da pessoa.
+
+Essa decisão depende da natureza da suspensão e das políticas de acesso da organização.
+
+#### Atributos conflitantes
+
+Com múltiplos vínculos ativos, dois registros podem apresentar valores diferentes:
+
+```text
+CLT
+Cargo: Analista
+Gestor: Gestor A
+Departamento: Tecnologia
+Empresa: Empresa A
+
+PJ
+Cargo: Consultor
+Gestor: Gestor B
+Departamento: Projetos
+Empresa: Empresa B
+```
+
+É necessário definir qual vínculo será considerado fonte dos atributos corporativos gravados no AD, ou se determinados atributos não podem ser representados por um único valor.
+
+Possíveis abordagens a discutir:
+
+- vínculo principal explicitamente indicado pela Senior/processo;
+- precedência por tipo de vínculo;
+- precedência por empresa/filial;
+- regra específica por atributo;
+- armazenamento de todos os vínculos no IAM, mas projeção de apenas um conjunto de atributos para o AD.
+
+Nenhuma dessas abordagens está aprovada neste momento.
+
+### Diretriz provisória
+
+Até a regra ser aprovada:
+
+> O IAM deve assumir que uma pessoa pode possuir zero, um ou vários vínculos simultâneos. A decisão de habilitar, suspender ou desligar a identidade deve considerar o conjunto de vínculos relevantes da pessoa e não apenas o registro que disparou o processamento. O encerramento de um vínculo isolado não deve causar automaticamente a desabilitação da conta quando existir outro vínculo ativo e elegível para a mesma pessoa.
+
+### Decisões necessárias com o time
+
+- [ ] Quais tipos de vínculo podem coexistir para a mesma pessoa?
+- [ ] Quais tipos de vínculo são elegíveis para manter acesso corporativo?
+- [ ] Como calcular o estado efetivo da identidade quando existem vários vínculos?
+- [ ] O encerramento de um vínculo pode desabilitar a conta se outro vínculo continuar ativo?
+- [ ] Como férias/afastamento/suspensão de um vínculo interagem com outro vínculo ativo?
+- [ ] Existe na Senior algum indicador de vínculo principal?
+- [ ] Caso não exista, qual regra determina o vínculo principal?
+- [ ] Qual vínculo fornece matrícula, cargo, gestor, empresa, departamento e centro de custo ao AD?
+- [ ] A precedência deve ser definida por vínculo ou por atributo?
+- [ ] Como auditar qual conjunto de vínculos levou ao estado final aplicado na identidade?
+- [ ] Como o portal de auditoria exibirá múltiplos vínculos para uma mesma identidade?
 
 ## Referências internas
 
 - `docs/requirements/functional-requirements.md`
+- `docs/identity/identity-correlation.md`
 - `docs/identity/joiner-mover-leaver.md`
 - `docs/integration/senior-admission-deletion.md`
