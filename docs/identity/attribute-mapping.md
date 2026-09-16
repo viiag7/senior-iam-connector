@@ -9,16 +9,22 @@
 
 - Apenas atributos necessários para identidade e lifecycle entram no conector.
 - O Senior é authoritative source para os campos definidos como `Senior`.
+- A conta corporativa representa a **pessoa**, e não o vínculo trabalhista.
 - Campos calculados pelo IAM devem possuir regra determinística e documentada.
-- O identificador de correlation não pode depender de nome, e-mail ou outro valor sujeito a alteração.
+- O identificador de correlation não pode depender de nome, e-mail, matrícula ou outro valor sujeito a alteração.
+- A chave preferencial de correlation é o identificador interno estável da Pessoa na Senior (`Person ID` ou equivalente), sujeito à validação no Discovery.
+- O CPF pode ser utilizado apenas como matching auxiliar e não deve ser propagado ao AD DS, Entra, logs ou portal quando não houver necessidade técnica.
 - Dados ausentes obrigatórios geram erro de validação e não devem produzir alterações parciais inseguras.
+
+Ver também: [`identity-correlation.md`](./identity-correlation.md).
 
 ## Mapping inicial
 
 | Informação | Campo Senior | SCIM / Inbound provisioning | AD DS | Obrigatório | Authority | Status |
 |---|---|---|---|---|---|---|
-| Identificador imutável da pessoa | **A confirmar** | `externalId` ou atributo dedicado | `employeeID` ou atributo dedicado | Sim | Senior | **Decisão aberta** |
-| Matrícula | **A confirmar** | atributo enterprise/custom | `employeeNumber` | Sim | Senior | A validar |
+| Identificador imutável da Pessoa | **Person ID / campo a confirmar** | `externalId` ou atributo dedicado | atributo dedicado / matching | Sim | Senior | **Decisão em validação** |
+| CPF | **A confirmar** | **Não enviar por padrão** | **Não persistir** | Condicional | Senior | Matching auxiliar somente |
+| Matrícula / identificador do vínculo | **A confirmar** | atributo enterprise/custom | `employeeNumber` | Sim | Senior | A validar |
 | Primeiro nome | **A confirmar** | `name.givenName` | `givenName` | Sim | Senior | A validar |
 | Sobrenome | **A confirmar** | `name.familyName` | `sn` | Sim | Senior | A validar |
 | Nome completo | **A confirmar** | `displayName` | `displayName` | Sim | Senior | A validar |
@@ -49,6 +55,8 @@ O conector não deve solicitar, persistir ou registrar em logs os seguintes grup
 - informações fiscais não necessárias para identidade;
 - documentos pessoais sem necessidade técnica comprovada.
 
+O CPF é uma exceção controlada apenas para **matching auxiliar**, quando necessário. Seu uso não autoriza persistência ou exposição fora do fluxo de correlação aprovado.
+
 Caso algum dado sensível seja proposto futuramente, a inclusão deve passar por nova decisão arquitetural e revisão de segurança/privacidade.
 
 ## Regras de transformação a definir
@@ -63,7 +71,7 @@ Precisamos definir:
 - tratamento de nomes compostos;
 - colisões;
 - estabilidade após mudança de nome;
-- comportamento em Rehire.
+- comportamento em Rehire ou mudança de vínculo.
 
 ### `userPrincipalName`
 
@@ -72,7 +80,8 @@ Precisamos definir:
 - suffix utilizado;
 - relação com e-mail corporativo;
 - alteração ou preservação após mudança de nome;
-- tratamento de colisões.
+- tratamento de colisões;
+- preservação em mudança de vínculo, quando aplicável.
 
 ### Manager
 
@@ -96,6 +105,8 @@ Cada atributo só entra em produção quando estas perguntas estiverem respondid
 
 - Identificar endpoints reais do Senior.
 - Testar conta técnica com permissões mínimas.
-- Confirmar qual identificador sobrevive a transferência, desligamento e recontratação.
+- Confirmar o `Person ID` (ou equivalente) e sua estabilidade em transferência, mudança de vínculo, desligamento e recontratação.
+- Confirmar que matrícula identifica o vínculo e pode mudar sem representar nova pessoa.
+- Validar uso restrito do CPF como matching auxiliar.
 - Exportar os default attribute mappings da aplicação Entra de laboratório.
 - Validar os atributos suportados no AD DS de destino.
