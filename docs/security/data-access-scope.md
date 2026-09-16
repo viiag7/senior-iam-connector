@@ -1,7 +1,7 @@
 # Data Access Scope e Security Baseline
 
-- **Status:** Draft
-- **Objetivo:** definir os limites de acesso do Senior IAM Connector e impedir que a integração tenha acesso desnecessário a dados de RH.
+- **Status:** Draft em revisão
+- **Objetivo:** definir os limites de acesso do Senior IAM Connector, impedir acesso desnecessário a dados de RH e estabelecer controles mínimos de segurança, auditoria e operação.
 
 ## Princípio de Least Privilege
 
@@ -28,7 +28,8 @@ Somente após validação no `attribute-mapping.md`, o conector poderá consulta
 - gestor;
 - localidade/unidade;
 - data de admissão;
-- data de desligamento.
+- data de desligamento;
+- eventos de férias/afastamento estritamente necessários para decisão de lifecycle.
 
 ## Dados proibidos no escopo inicial
 
@@ -38,7 +39,7 @@ O conector não deve possuir acesso funcional nem técnico, quando a plataforma 
 - eventos e valores de folha;
 - dados bancários;
 - benefícios;
-- informações médicas ou de saúde;
+- informações médicas ou de saúde além do estritamente necessário para classificar um evento de lifecycle, e preferencialmente sem detalhamento clínico;
 - dependentes;
 - dados fiscais sem relação necessária com identidade;
 - documentos pessoais sem justificativa IAM.
@@ -63,7 +64,7 @@ Requisitos:
 
 O cliente que envia dados ao inbound provisioning deve usar autenticação de aplicação, sem credenciais de usuário humano.
 
-As permissões do Microsoft Graph devem seguir o mínimo necessário para o cenário de inbound provisioning. A documentação atual do Microsoft Entra identifica permissões específicas para upload de dados de sincronização e leitura de provisioning logs; as permissões efetivas do ambiente devem ser registradas antes do deploy.
+As permissões do Microsoft Graph devem seguir o mínimo necessário para o cenário de inbound provisioning. As permissões efetivas do ambiente devem ser registradas antes do deploy.
 
 ## Secrets
 
@@ -78,7 +79,7 @@ Nunca devem ser versionados no GitHub:
 
 Ambiente local deve usar mecanismo de secrets de desenvolvimento; ambientes compartilhados/produção devem usar um secret store corporativo aprovado.
 
-## Logging e privacidade
+## Logging, auditoria e privacidade
 
 Logs devem privilegiar identificadores técnicos e correlation IDs.
 
@@ -96,15 +97,42 @@ Evitar registrar payload completo por padrão.
 
 Payloads somente poderão ser habilitados para troubleshooting controlado, com sanitização e retenção curta.
 
+Os requisitos completos de auditoria e observabilidade estão definidos em `docs/requirements/audit-observability.md`.
+
+Como baseline de segurança:
+
+- falhas de provisioning não podem permanecer silenciosas;
+- eventos de auditoria devem ser protegidos contra alteração/exclusão não autorizada;
+- alterações administrativas em políticas de lifecycle e overrides devem possuir responsável identificável;
+- alertas devem conter contexto suficiente para investigação sem expor dados sensíveis desnecessários;
+- sucesso assíncrono intermediário não deve ser confundido com convergência final no AD DS;
+- operações críticas de disable/enable devem ser confirmadas ou reconciliadas;
+- histórico de falha não deve ser apagado após reprocessamento bem-sucedido.
+
+## Overrides de férias e suspensões
+
+O sistema pode permitir políticas individuais de acesso durante férias/afastamentos, conforme requisitos funcionais.
+
+Essas exceções devem seguir controles adicionais:
+
+- somente atores autorizados podem criar ou alterar overrides;
+- toda alteração deve registrar responsável e justificativa;
+- a vigência deve ser rastreável;
+- overrides devem estar disponíveis para auditoria/revisão;
+- um override não pode sobrepor estado `TERMINATED` ou outra condição de maior precedência;
+- alteração manual diretamente no AD DS não deve ser utilizada como substituto de um override governado pelo IAM.
+
 ## Separação de funções
 
 Idealmente:
 
 - RH controla dados de vínculo no Senior;
-- IAM/Segurança define mappings e regras de lifecycle;
+- IAM/Segurança define mappings, regras de lifecycle e políticas de suspensão;
+- gestores/atores autorizados podem solicitar ou aprovar exceções conforme processo que ainda será definido;
 - Infra/Identity administra AD DS e Provisioning Agent;
 - aplicação usa identidades técnicas próprias;
-- alterações em regras críticas passam por Pull Request/review.
+- alterações em regras críticas passam por Pull Request/review;
+- acesso de leitura a evidências de auditoria pode ser segregado do acesso de alteração operacional.
 
 ## Controles para produção
 
@@ -120,8 +148,17 @@ Antes do go-live:
 - [ ] Logs sem dados sensíveis desnecessários.
 - [ ] Rotação e revogação de credenciais testadas.
 - [ ] Runbook para comprometimento da credencial.
+- [ ] Centralização de audit logs definida.
+- [ ] Proteção contra alteração/exclusão indevida de audit logs definida.
+- [ ] Retenção de logs aprovada por Segurança/Compliance.
+- [ ] Alertas de falha persistente de provisioning testados.
+- [ ] Falha de desabilitação de Leaver testada com alerta de alta prioridade.
+- [ ] Acesso aos logs/auditoria seguindo Least Privilege.
+- [ ] Processo de revisão de overrides/exceções definido.
 
 ## Referências
 
+- `docs/requirements/functional-requirements.md`
+- `docs/requirements/audit-observability.md`
 - Senior — Papéis e permissões HCM: https://documentacao.senior.com.br/seniorxplatform/manual-do-usuario/hcm/papeis-e-permissoes/
 - Microsoft Learn — API-driven inbound provisioning concepts: https://learn.microsoft.com/en-us/entra/identity/app-provisioning/inbound-provisioning-api-concepts
