@@ -214,16 +214,100 @@ outro vínculo ativo e elegível.
 
 Portanto, **o lifecycle da conta não pode ser derivado cegamente do estado de um único vínculo** quando a pessoa possuir múltiplos vínculos.
 
+### Risco específico — desligamento parcial
+
+Quando uma pessoa possui dois ou mais vínculos e apenas um deles é encerrado, o evento deve ser tratado como **desligamento de vínculo**, e não automaticamente como **desligamento da pessoa**.
+
+Exemplo:
+
+```text
+Estado inicial
+
+Pessoa / CPF 123
+├── CLT = ACTIVE
+└── PJ  = ACTIVE
+
+Identity = ACTIVE
+AD account = ENABLED
+
+          |
+          | desligamento somente do CLT
+          v
+
+Estado resultante
+
+Pessoa / CPF 123
+├── CLT = TERMINATED
+└── PJ  = ACTIVE
+
+Identity = ACTIVE
+AD account = ENABLED
+```
+
+Antes de executar qualquer `disable` motivado por desligamento, o IAM deve avaliar **todos os vínculos conhecidos da pessoa** e determinar se ainda existe pelo menos um vínculo ativo e elegível para manter acesso.
+
+A conta somente poderá assumir `TERMINATED` por desligamento quando a regra agregada concluir que **não existe nenhum outro vínculo elegível que justifique a manutenção do acesso**.
+
+#### Risco de atributos residuais
+
+Mesmo quando a conta deve permanecer habilitada, o encerramento de um dos vínculos pode exigir alteração de atributos no AD DS.
+
+Exemplo:
+
+```text
+Antes
+
+CLT = ACTIVE
+  cargo       = Gerente
+  gestor      = Gestor A
+  empresa     = Empresa A
+  matrícula   = 1001
+
+PJ = ACTIVE
+  cargo       = Consultor
+  gestor      = Gestor B
+  empresa     = Empresa B
+  matrícula   = 9001
+
+AD estava projetando atributos do CLT.
+
+Depois
+
+CLT = TERMINATED
+PJ  = ACTIVE
+```
+
+Se o vínculo CLT era a origem dos atributos projetados, o IAM não pode simplesmente manter os valores antigos. Deve recalcular a origem efetiva dos atributos conforme a política de precedência e atualizar o AD de forma determinística.
+
+Sem essa regra, a conta permaneceria habilitada corretamente, porém com informações organizacionais de um vínculo já encerrado.
+
+#### Risco de ordem de eventos
+
+O IAM não deve assumir que eventos de vínculos diferentes chegarão sempre na ordem ideal.
+
+Exemplo:
+
+```text
+Evento 1 recebido: CLT -> TERMINATED
+Evento 2 ainda não processado: PJ continua ACTIVE
+```
+
+Uma implementação que execute imediatamente o disable com base apenas no primeiro evento pode causar indisponibilidade temporária indevida.
+
+Por isso, a decisão de lifecycle deve ser baseada no **estado consolidado mais recente da pessoa**, preferencialmente relendo/reconciliando seus vínculos antes de uma operação destrutiva de acesso como `disable` por desligamento.
+
 ### Impactos potenciais
 
 Sem uma regra explícita para múltiplos vínculos, podem ocorrer:
 
 - desabilitação indevida da conta quando apenas um dos vínculos é encerrado;
+- manutenção de atributos de um vínculo já encerrado;
 - reativação indevida por um vínculo quando outro vínculo deveria bloquear acesso;
 - duplicidade de conta caso dois vínculos do mesmo CPF sejam processados como pessoas diferentes;
 - conflito de atributos como matrícula, cargo, departamento, gestor, empresa/filial, centro de custo e tipo de vínculo;
 - oscilações de atributos no AD conforme vínculos diferentes sejam processados em momentos distintos;
 - comportamento não determinístico na reconciliação;
+- indisponibilidade temporária causada por processamento de eventos fora de ordem;
 - auditoria difícil de explicar, pois uma ação sobre a identidade pode ter sido causada por apenas um dos vários vínculos existentes.
 
 ### Modelo conceitual necessário
@@ -267,6 +351,8 @@ PJ  = ACTIVE
 ```
 
 A conta **não deve ser automaticamente tratada como `TERMINATED`** apenas porque o vínculo CLT terminou. A regra final deve considerar se ainda existe outro vínculo ativo e elegível que justifique manutenção do acesso.
+
+Além disso, deve ser avaliado se os atributos projetados no AD precisam migrar do vínculo encerrado para o vínculo remanescente.
 
 #### Suspensão de apenas um vínculo
 
@@ -315,7 +401,7 @@ Nenhuma dessas abordagens está aprovada neste momento.
 
 Até a regra ser aprovada:
 
-> O IAM deve assumir que uma pessoa pode possuir zero, um ou vários vínculos simultâneos. A decisão de habilitar, suspender ou desligar a identidade deve considerar o conjunto de vínculos relevantes da pessoa e não apenas o registro que disparou o processamento. O encerramento de um vínculo isolado não deve causar automaticamente a desabilitação da conta quando existir outro vínculo ativo e elegível para a mesma pessoa.
+> O IAM deve assumir que uma pessoa pode possuir zero, um ou vários vínculos simultâneos. A decisão de habilitar, suspender ou desligar a identidade deve considerar o conjunto de vínculos relevantes da pessoa e não apenas o registro que disparou o processamento. O encerramento de um vínculo isolado não deve causar automaticamente a desabilitação da conta quando existir outro vínculo ativo e elegível para a mesma pessoa. Antes de um disable por desligamento, o estado consolidado da pessoa deve ser validado. Se o vínculo encerrado fornecia atributos ao AD, esses atributos devem ser recalculados a partir dos vínculos remanescentes conforme política determinística.
 
 ### Decisões necessárias com o time
 
@@ -323,10 +409,13 @@ Até a regra ser aprovada:
 - [ ] Quais tipos de vínculo são elegíveis para manter acesso corporativo?
 - [ ] Como calcular o estado efetivo da identidade quando existem vários vínculos?
 - [ ] O encerramento de um vínculo pode desabilitar a conta se outro vínculo continuar ativo?
+- [ ] Antes de um disable por desligamento, quais dados devem ser relidos/reconciliados para garantir que não existe outro vínculo elegível?
+- [ ] Como tratar eventos de vínculos recebidos fora de ordem?
 - [ ] Como férias/afastamento/suspensão de um vínculo interagem com outro vínculo ativo?
 - [ ] Existe na Senior algum indicador de vínculo principal?
 - [ ] Caso não exista, qual regra determina o vínculo principal?
 - [ ] Qual vínculo fornece matrícula, cargo, gestor, empresa, departamento e centro de custo ao AD?
+- [ ] Quando o vínculo principal é encerrado, como os atributos migram para um vínculo remanescente?
 - [ ] A precedência deve ser definida por vínculo ou por atributo?
 - [ ] Como auditar qual conjunto de vínculos levou ao estado final aplicado na identidade?
 - [ ] Como o portal de auditoria exibirá múltiplos vínculos para uma mesma identidade?
