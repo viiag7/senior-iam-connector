@@ -3,7 +3,7 @@
 - **Status:** Draft — contrato Senior parcialmente validado em Swagger
 - **Objetivo:** definir o contrato mínimo de dados usado pelo IAM sem expor informações desnecessárias de RH.
 
-> O contrato de `GET /getEmployee` e `GET /getPerson` foi validado no Swagger do ambiente Senior X. Os campos abaixo marcados como confirmados refletem o schema observado. Os campos Senior principais já foram confirmados. Permanecem em Discovery a resolução de manager, a situação efetiva de férias/afastamentos/desligamento e alguns detalhes físicos do schema AD.
+> O contrato de `GET /getEmployee` e `GET /getPerson` foi validado no Swagger do ambiente Senior X. Os campos abaixo marcados como confirmados refletem o schema observado. A resolução de `manager` pela hierarquia do posto está definida neste documento; permanece pendente apenas a política funcional para posições superiores existentes porém sem ocupante resolvível. Mapeamentos físicos de alguns atributos no AD DS e a situação efetiva do vínculo ainda permanecem em Discovery.
 
 ## Regras
 
@@ -30,13 +30,13 @@ Ver também:
 Endpoint principal do MVP:
 
 ```text
-GET /hcm/employeejourney/getEmployee
+GET /hcm/employeejourney/queries/getEmployee
 ```
 
 Endpoint complementar:
 
 ```text
-GET /hcm/employeejourney/getPerson
+GET /hcm/employeejourney/queries/getPerson
 ```
 
 O schema observado de `getEmployee` contém no mesmo registro:
@@ -233,38 +233,113 @@ Ainda precisam de aprovação final do time para:
 
 ### Manager
 
-O `getEmployee` não expõe diretamente o usuário gestor. O schema validado disponibiliza:
+O `getEmployee` não expõe diretamente um identificador de usuário do gestor. A hierarquia é representada pelo posto do colaborador:
 
 ```text
 workstation.hierarchyItem.id
+workstation.hierarchyItem.parent.id
 ```
 
-Esse valor deve ser tratado como **referência de hierarquia**, não como valor direto de `manager`.
+Semântica adotada:
 
-Fluxo esperado:
+- `workstation.hierarchyItem.id` é o **ID da posição hierárquica ocupada pelo próprio colaborador**;
+- `workstation.hierarchyItem.parent.id` é o **ID da posição hierárquica superior imediata**;
+- nenhum desses valores é ID de pessoa, Employee ID, matrícula ou DN do Active Directory;
+- o objeto `parent` pode ser recursivo e representar níveis superiores sucessivos, porém o MVP usa somente o **parent imediato** para resolver o gestor direto.
+
+A resolução de `manager` deve ocorrer por correlação entre os próprios registros de colaboradores retornados pela Senior:
 
 ```text
-workstation.hierarchyItem.id
-        |
-        v
-resolver item de hierarquia / posição superior
-        |
-        v
-identificar pessoa ou vínculo do gestor
-        |
-        v
-correlacionar com identidade IAM
-        |
-        v
-resolver distinguishedName no AD DS
-        |
-        v
+employee
+  |
+  +--> workstation.hierarchyItem.parent.id
+                    |
+                    v
+procurar outro employee onde
+workstation.hierarchyItem.id == parent.id
+                    |
+                    v
+employee ocupante da posição superior
+                    |
+                    v
+correlacionar pessoa com identidade IAM
+                    |
+                    v
+resolver distinguishedName da conta no AD DS
+                    |
+                    v
 manager
 ```
 
-O manager só deve ser aplicado quando a pessoa gestora puder ser resolvida de forma inequívoca. A implementação não deve criar uma segunda regra de correlação de pessoas diferente da definida em `identity-correlation.md`.
+Exemplo conceitual:
 
-Ainda deve ser identificado no Senior X qual endpoint/query permite resolver o `hierarchyItem.id` até a pessoa/vínculo gestor.
+```text
+Colaborador A
+  hierarchyItem.id        = POS-100
+  hierarchyItem.parent.id = POS-050
+
+Colaborador B
+  hierarchyItem.id        = POS-050
+
+=> B é o candidato a gestor direto de A
+=> após correlação inequívoca com a identidade IAM de B:
+   A.manager = distinguishedName da conta AD de B
+```
+
+#### Estratégia de implementação
+
+Durante a leitura/reconciliação dos colaboradores, o conector deve construir um índice local:
+
+```text
+employeeByHierarchyItemId[
+    employee.workstation.hierarchyItem.id
+] = employee
+```
+
+A resolução passa a ser:
+
+```text
+managerHierarchyItemId =
+    employee.workstation.hierarchyItem.parent.id
+
+managerEmployee =
+    employeeByHierarchyItemId[managerHierarchyItemId]
+```
+
+Essa estratégia evita executar uma chamada adicional à Senior para cada colaborador e permite resolver gestores em tempo constante após a montagem do snapshot/index.
+
+O índice deve considerar apenas valores não nulos e a implementação deve detectar inconsistências em que mais de um colaborador apareça como ocupante da mesma posição hierárquica.
+
+#### Regras de segurança e consistência
+
+O atributo `manager` só deve ser aplicado quando:
+
+1. `workstation.hierarchyItem.parent.id` estiver presente;
+2. existir **um único** colaborador resolvido para esse `parent.id`;
+3. a pessoa desse colaborador estiver correlacionada de forma inequívoca com uma identidade IAM;
+4. a conta AD correspondente possuir um `distinguishedName` válido.
+
+A implementação não deve:
+
+- escrever o UUID de `hierarchyItem.id` ou `parent.id` diretamente no atributo `manager`;
+- tratar o ID de hierarquia como Person ID, Employee ID ou matrícula;
+- criar uma regra alternativa de correlação de pessoas diferente da definida em `identity-correlation.md`;
+- subir automaticamente para `parent.parent` quando a posição superior imediata estiver sem ocupante, até que essa política seja aprovada.
+
+Se o próprio `parent` não existir, o colaborador está no topo da hierarquia retornada e não há gestor direto a resolver por esta regra.
+
+Se `parent.id` existir mas não houver ocupante resolvível, houver mais de um ocupante, ou a identidade AD do gestor ainda não estiver correlacionada, o conector deve tratar o `manager` como **não resolvido**, registrar a condição para reconciliação/observabilidade e não inventar um gestor alternativo.
+
+#### Pendência funcional remanescente
+
+Ainda precisa ser decidido o comportamento quando a posição superior imediata existe, porém está sem ocupante. As opções funcionais a serem avaliadas são:
+
+- manter `manager` sem alteração até que a posição seja ocupada;
+- limpar `manager`;
+- subir recursivamente na hierarquia até encontrar a primeira posição superior ocupada.
+
+Nenhuma dessas alternativas deve ser implementada implicitamente antes da decisão funcional.
+
 
 ### Situação do vínculo
 
@@ -301,7 +376,8 @@ Cada atributo só entra em produção quando estas perguntas estiverem respondid
 - Confirmar que `registerNumber` identifica o vínculo e pode mudar sem representar nova pessoa.
 - Definir normalização, validação e proteção da chave CPF no IAM.
 - Definir a chave técnica usada pelo IAM para referenciar a conta já correlacionada no Entra/AD DS.
-- Identificar a query/endpoint Senior que resolve `workstation.hierarchyItem.id` até o gestor.
+- Validar em dados reais que `workstation.hierarchyItem.parent.id` referencia a posição superior imediata e que o ocupante é localizado por `workstation.hierarchyItem.id == parent.id`.
+- Definir a política para posição superior existente porém sem ocupante resolvível: manter, limpar ou subir recursivamente para outro nível.
 - Definir regra de seleção de `emails[]` quando houver mais de um e-mail e confirmar qual representa e-mail corporativo.
 - Definir regra de seleção de `phoneContact[]` quando houver múltiplos contatos.
 - Validar a semântica de `workstation.workstationGroup.name` como posto/localidade/unidade.
@@ -316,7 +392,8 @@ Cada atributo só entra em produção quando estas perguntas estiverem respondid
 
 ## Referências
 
-- Senior X API Portal — Jornada do Colaborador / `getEmployee` (schema validado no Swagger do ambiente).
+- Senior X API Portal — Jornada do Colaborador / `getEmployee` (schema validado no Swagger do ambiente; hierarquia documentada com `hierarchyItem.id` e `parent` recursivo): https://api.xplatform.com.br/api-portal/pt-br/tutoriais/jornada-do-colaborador/colaborador
+- Senior X — nota de descontinuação das rotas antigas `employeejourney/apis/*` e `employeejourney/entities/*` em favor de `employeejourney/queries/*`: https://documentacao.senior.com.br/seniorxplatform/notas-da-versao/hcm/seniorx-modulo/painel-de-gestao/
 - Senior X API Portal — Jornada do Colaborador / `getPerson` (schema validado no Swagger do ambiente).
 - Microsoft Learn — UserAccountControl property flags: https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/useraccountcontrol-manipulate-account-properties
 - Microsoft Learn — Revoke user access in Microsoft Entra ID: https://learn.microsoft.com/en-us/entra/identity/users/users-revoke-access
