@@ -3,7 +3,7 @@
 - **Status:** Draft — contrato Senior parcialmente validado em Swagger
 - **Objetivo:** definir o contrato mínimo de dados usado pelo IAM sem expor informações desnecessárias de RH.
 
-> O contrato de `GET /getEmployee` e `GET /getPerson` foi validado no Swagger do ambiente Senior X. Os campos abaixo marcados como confirmados refletem o schema observado. Mapeamentos físicos de alguns atributos no AD DS, regras de manager, situação efetiva do vínculo e decisões de múltiplos vínculos ainda permanecem em Discovery.
+> O contrato de `GET /getEmployee` e `GET /getPerson` foi validado no Swagger do ambiente Senior X. Os campos abaixo marcados como confirmados refletem o schema observado. Os campos Senior principais já foram confirmados. Permanecem em Discovery a resolução de manager, a situação efetiva de férias/afastamentos/desligamento e alguns detalhes físicos do schema AD.
 
 ## Regras
 
