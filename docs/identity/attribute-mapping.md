@@ -1,9 +1,9 @@
 # Attribute Mapping — Senior → Entra Provisioning → AD DS
 
-- **Status:** Draft
+- **Status:** Draft — contrato Senior parcialmente validado em Swagger
 - **Objetivo:** definir o contrato mínimo de dados usado pelo IAM sem expor informações desnecessárias de RH.
 
-> Os nomes exatos dos campos e endpoints do Senior ainda precisam ser confirmados durante o Discovery. Esta tabela descreve a semântica esperada e não deve ser usada como contrato de API definitivo.
+> O contrato de `GET /getEmployee` e `GET /getPerson` foi validado no Swagger do ambiente Senior X. Os campos abaixo marcados como confirmados refletem o schema observado. Mapeamentos físicos de alguns atributos no AD DS, regras de manager, situação efetiva do vínculo e decisões de múltiplos vínculos ainda permanecem em Discovery.
 
 ## Regras
 
@@ -16,6 +16,8 @@
 - O CPF deve ser protegido e não deve ser propagado ao AD DS, Entra, logs ou portal quando não houver necessidade técnica.
 - Dados ausentes obrigatórios geram erro de validação e não devem produzir alterações parciais inseguras.
 - O AD DS deve possuir metadados suficientes para diferenciar uma conta desabilitada por desligamento/cancelamento de uma conta temporariamente suspensa.
+- O `GET /getEmployee` deve ser a fonte preferencial do MVP, pois já agrega dados do vínculo, pessoa, cargo, departamento, centro de custo, empresa, contato e referência de hierarquia.
+- O `GET /getPerson` deve ser usado apenas quando houver necessidade específica de enriquecer dados de pessoa não presentes no `getEmployee`.
 
 Ver também:
 
@@ -23,32 +25,102 @@ Ver também:
 - [`joiner-mover-leaver.md`](./joiner-mover-leaver.md)
 - [`naming-policy.md`](./naming-policy.md)
 
+## Contrato Senior validado
+
+Endpoint principal do MVP:
+
+```text
+GET /hcm/employeejourney/getEmployee
+```
+
+Endpoint complementar:
+
+```text
+GET /hcm/employeejourney/getPerson
+```
+
+O schema observado de `getEmployee` contém no mesmo registro:
+
+- identificadores e datas do vínculo;
+- tipo de contrato e relação empregatícia;
+- cargo;
+- departamento;
+- centro de custo;
+- empresa;
+- dados básicos de pessoa;
+- e-mail e telefone do vínculo;
+- posto de trabalho;
+- referência do item de hierarquia.
+
 ## Mapping inicial
 
 | Informação | Campo Senior | Uso no IAM / SCIM | AD DS | Obrigatório | Authority | Status |
 |---|---|---|---|---|---|---|
-| CPF | **A confirmar** | **Chave exclusiva de correlação da pessoa; representação protegida no IAM** | **Não persistir por padrão** | Sim | Senior | **Decisão funcional definida; campo técnico a validar** |
-| Person ID / referência interna Senior | **A confirmar** | Referência técnica/auditoria; não usar para matching de pessoa | Não necessário por padrão | Não | Senior | A validar |
-| Matrícula / identificador do vínculo | **A confirmar** | atributo enterprise/custom | `employeeNumber` | Sim | Senior | A validar |
-| Primeiro nome | **A confirmar** | `name.givenName` | `givenName` | Sim | Senior | A validar |
-| Sobrenome | **A confirmar** | `name.familyName` | `sn` | Sim | Senior | A validar |
-| Nome completo | **A confirmar** | `displayName` | `displayName` | Sim | Senior | A validar |
-| Nome preferido | **A confirmar** | custom/transform | a definir | Não | Senior | Opcional |
+| CPF | `person.cpf` | **Chave exclusiva de correlação da pessoa; representação protegida no IAM** | **Não persistir por padrão** | Sim | Senior | **Campo confirmado no Swagger** |
+| Person ID / referência interna Senior | `person.id` | Referência técnica/auditoria; não usar para matching de pessoa | Não necessário por padrão | Não | Senior | **Campo confirmado** |
+| Employee ID / referência interna do vínculo | `id` | Referência técnica do vínculo e auditoria | custom/extension somente se necessário | Não | Senior | **Campo confirmado** |
+| Matrícula / identificador do vínculo | `registerNumber` | atributo enterprise/custom | `employeeNumber` **a validar no mapping Entra/AD** | Sim | Senior | **Campo confirmado; target físico pendente** |
+| Primeiro nome | `person.firstname` | `name.givenName` | `givenName` | Sim | Senior | **Confirmado** |
+| Sobrenome | `person.lastname` | `name.familyName` | `sn` | Sim | Senior | **Confirmado** |
+| Nome completo | `person.fullName` | `displayName` | `displayName` | Sim | Senior | **Confirmado** |
+| Nome social / preferido | `person.socialName` | custom/transform conforme política de naming | a definir | Não | Senior | **Campo confirmado; regra de uso pendente** |
+| Apelido | `person.nickname` | opcional / não usar por padrão em naming | a definir | Não | Senior | **Campo confirmado; fora do mínimo inicial** |
 | Username | Calculado | `userName` | `sAMAccountName` | Sim | IAM policy | Política proposta em `naming-policy.md` |
 | UPN | Calculado | mapping/transform | `userPrincipalName` | Sim | IAM policy | Política proposta em `naming-policy.md` |
-| Cargo | **A confirmar** | `title` | `title` | Não | Senior | A validar |
-| Departamento | **A confirmar** | `department` | `department` | Não | Senior | A validar |
-| Empresa | **A confirmar** | `organization`/custom | `company` | Não | Senior | A validar |
-| Centro de custo | **A confirmar** | custom | extension/custom attribute | Não | Senior | **Decisão aberta** |
-| Gestor | **A confirmar** | `manager`/custom correlation | `manager` | Não | Senior | **Decisão aberta** |
-| Tipo de vínculo | **A confirmar** | custom | custom/extension attribute | Não | Senior | A validar |
-| Situação do vínculo | **A confirmar** | lifecycle input | não projetar isoladamente como estado da conta | Sim | Senior | Deve compor estado efetivo da pessoa |
-| Data de admissão | **A confirmar** | `employeeHireDate` quando aplicável | custom/extension attribute | Sim | Senior | A validar |
-| Data de desligamento | **A confirmar** | `employeeLeaveDateTime` quando aplicável | custom/extension attribute | Condicional | Senior | A validar |
-| Localidade/unidade | **A confirmar** | custom | `physicalDeliveryOfficeName` ou custom | Não | Senior | A validar |
+| E-mail corporativo | `emails[].email` | `emails.work` / atributo de contato | `mail` e/ou `proxyAddresses` conforme política | Condicional | Senior | **Campo confirmado; regra de seleção/target pendente** |
+| Cargo | `jobPosition.name` | `title` | `title` | Não | Senior | **Confirmado** |
+| Código do cargo | `jobPosition.codcar` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Departamento | `department.name` | `department` | `department` | Não | Senior | **Confirmado** |
+| Código do departamento | `department.code` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Empresa | `employer.companyName` | `organization`/custom | `company` | Não | Senior | **Confirmado** |
+| Código da empresa | `employer.numemp` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Centro de custo | `costCenter.name` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Código do centro de custo | `costCenter.codccu` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Gestor | `workstation.hierarchyItem.id` como referência de hierarquia | resolver hierarquia → pessoa gestora → identidade IAM | `manager` | Não | Senior + IAM correlation | **Referência confirmada; resolução do gestor pendente** |
+| Tipo de contrato | `contractType` | regra de elegibilidade / custom | custom/extension attribute se necessário | Não | Senior | **Confirmado** |
+| Tipo de colaborador | `employeeType` | regra de elegibilidade / custom | custom/extension attribute se necessário | Não | Senior | **Confirmado** |
+| Relação empregatícia | `employmentrelationshiptype` | regra de elegibilidade / custom | custom/extension attribute se necessário | Não | Senior | **Confirmado** |
+| Situação efetiva do vínculo | **Não há campo de status explícito confirmado no schema observado** | lifecycle input calculado a partir dos dados autoritativos e regras aprovadas | não projetar isoladamente como estado da conta | Sim | Senior + IAM policy | **Pendente de definição funcional/técnica** |
+| Data de admissão | `hireDate` | `employeeHireDate` quando aplicável / lifecycle | custom/extension attribute se necessário | Sim | Senior | **Confirmado** |
+| Data de desligamento | `dismissalDate` | `employeeLeaveDateTime` quando aplicável / lifecycle | custom/extension attribute se necessário | Condicional | Senior | **Confirmado** |
+| Posto / unidade organizacional | `workstation.workstationGroup.name` | custom | `physicalDeliveryOfficeName` ou custom | Não | Senior | **Campo confirmado; semântica/target pendente** |
+| Código do posto | `workstation.workstationGroup.postra` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Telefone do vínculo | `phoneContact[]` | atributo de contato quando corporativo | `telephoneNumber` / `mobile` conforme tipo | Não | Senior | **Campo confirmado; filtro de tipo pendente** |
 | Estado efetivo IAM | Calculado | `iamLifecycleState` lógico | **atributo custom/extension a definir** | Sim | IAM policy | Necessário para auditoria/retention |
 | Data/hora da desabilitação | Calculado no momento da ação | `iamDisabledAt` lógico | **atributo custom/extension a definir** | Condicional | IAM policy | Necessário quando conta desabilitada |
 | Motivo da desabilitação | Calculado pela regra de lifecycle | `iamDisableReason` lógico | **atributo custom/extension a definir** | Condicional | IAM policy | Necessário quando conta desabilitada |
+
+## Campos confirmados no schema que não entram no contrato IAM padrão
+
+O `getEmployee` agrega vários campos de pessoa que não são necessários para provisionamento de identidade. Eles devem ser ignorados pelo conector por padrão e não devem ser persistidos ou registrados em logs:
+
+```text
+person.birthday
+person.gender
+person.maritalstatus
+person.race
+person.ethnicity
+person.nis
+person.nationality
+person.naturality
+person.educationDegree
+person.address
+person.disabilities
+```
+
+Também não entram no contrato mínimo inicial, salvo decisão específica:
+
+```text
+workShift
+historicStability
+employer.cnpj
+employer.cnae
+employer.address
+department.address
+costCenter.company
+```
+
+A existência desses campos na resposta reforça a necessidade de minimização no processamento e de evitar logging de payload completo.
 
 ## Tratamento do CPF
 
@@ -179,7 +251,44 @@ Ainda precisam de aprovação final do time para:
 
 ### Manager
 
-O manager deve ser aplicado somente quando a identidade correspondente da pessoa gestora puder ser resolvida de forma inequívoca. A implementação não deve criar uma segunda regra de correlação de pessoas diferente da definida em `identity-correlation.md`.
+O `getEmployee` não expõe diretamente o usuário gestor. O schema validado disponibiliza:
+
+```text
+workstation.hierarchyItem.id
+```
+
+Esse valor deve ser tratado como **referência de hierarquia**, não como valor direto de `manager`.
+
+Fluxo esperado:
+
+```text
+workstation.hierarchyItem.id
+        |
+        v
+resolver item de hierarquia / posição superior
+        |
+        v
+identificar pessoa ou vínculo do gestor
+        |
+        v
+correlacionar com identidade IAM
+        |
+        v
+resolver distinguishedName no AD DS
+        |
+        v
+manager
+```
+
+O manager só deve ser aplicado quando a pessoa gestora puder ser resolvida de forma inequívoca. A implementação não deve criar uma segunda regra de correlação de pessoas diferente da definida em `identity-correlation.md`.
+
+Ainda deve ser identificado no Senior X qual endpoint/query permite resolver o `hierarchyItem.id` até a pessoa/vínculo gestor.
+
+### Situação do vínculo
+
+O schema observado do `getEmployee` não apresentou um campo simples equivalente a `status = ACTIVE/TERMINATED`.
+
+O lifecycle não deve assumir que `dismissalDate == null` é suficiente para classificar todos os casos. A situação efetiva deve considerar as regras funcionais aprovadas e, quando necessário, fontes complementares para afastamento, férias, cancelamento e demais estados.
 
 ### Múltiplos vínculos
 
@@ -203,19 +312,27 @@ Cada atributo só entra em produção quando estas perguntas estiverem respondid
 
 ## Próximas validações
 
-- Identificar endpoints reais do Senior.
-- Testar conta técnica com permissões mínimas.
-- Confirmar o campo de CPF e sua disponibilidade para todos os vínculos elegíveis.
-- Confirmar que matrícula identifica o vínculo e pode mudar sem representar nova pessoa.
+- Testar conta técnica Senior X com permissões mínimas apenas para `employeejourney/getEmployee` e recursos estritamente necessários.
+- Confirmar a disponibilidade de `person.cpf` para todos os vínculos elegíveis e os impactos de abrangência/permissão.
+- Confirmar que `registerNumber` identifica o vínculo e pode mudar sem representar nova pessoa.
 - Definir normalização, validação e proteção da chave CPF no IAM.
 - Definir a chave técnica usada pelo IAM para referenciar a conta já correlacionada no Entra/AD DS.
-- Selecionar os atributos físicos do AD DS para lifecycle, data e motivo da desabilitação.
+- Identificar a query/endpoint Senior que resolve `workstation.hierarchyItem.id` até o gestor.
+- Definir regra de seleção de `emails[]` quando houver mais de um e-mail e confirmar qual representa e-mail corporativo.
+- Definir regra de seleção de `phoneContact[]` quando houver múltiplos contatos.
+- Validar a semântica de `workstation.workstationGroup.name` como posto/localidade/unidade.
+- Identificar a fonte autoritativa da situação efetiva do vínculo para férias, afastamentos, cancelamento e demais estados não representados por um status explícito no schema observado.
+- Selecionar os atributos físicos do AD DS para códigos organizacionais, lifecycle, data e motivo da desabilitação.
 - Validar leitura/escrita desses atributos pelo Provisioning Agent.
 - Validar que conta `TEMPORARILY_SUSPENDED` não entra em eventual limpeza por idade.
 - Exportar os default attribute mappings da aplicação Entra de laboratório.
+- Confirmar se matrícula deve mapear fisicamente para `employeeNumber`, `employeeID` ou outro atributo suportado pelo fluxo de inbound provisioning.
 - Validar os atributos suportados no AD DS de destino.
+- Testar que o papel técnico do Senior não possui acesso a remuneração, folha e demais dados fora do escopo IAM.
 
 ## Referências
 
+- Senior X API Portal — Jornada do Colaborador / `getEmployee` (schema validado no Swagger do ambiente).
+- Senior X API Portal — Jornada do Colaborador / `getPerson` (schema validado no Swagger do ambiente).
 - Microsoft Learn — UserAccountControl property flags: https://learn.microsoft.com/en-us/troubleshoot/windows-server/active-directory/useraccountcontrol-manipulate-account-properties
 - Microsoft Learn — Revoke user access in Microsoft Entra ID: https://learn.microsoft.com/en-us/entra/identity/users/users-revoke-access
