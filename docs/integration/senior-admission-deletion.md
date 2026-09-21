@@ -149,7 +149,7 @@ O cancelamento deve permitir rastrear:
 - data/hora da exclusão quando fornecida pela Senior;
 - data/hora do processamento no IAM;
 - ação de disable executada no AD DS;
-- `iamDisabledAt` e `iamDisableReason` lógicos;
+- `seniorIamEmploymentStatus`, `seniorIamStatusChangedAt` e `seniorIamDisabledAt`;
 - correlation ID;
 - resultado.
 
