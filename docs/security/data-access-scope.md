@@ -46,7 +46,7 @@ O CPF:
 - não deve ser exibido no portal de auditoria por padrão;
 - não deve ser persistido como atributo visível no AD DS;
 - não deve ser enviado ao Entra Provisioning quando não houver necessidade técnica;
-- deve ter sua persistência no banco IAM protegida conforme decisão arquitetural específica;
+- na primeira fase, poderá ser persistido em texto claro somente no storage interno do IAM, conforme risco aceito do MVP;
 - não pode ser substituído por matching automático baseado em nome, matrícula, Person ID, e-mail ou outros atributos.
 
 ## Dados proibidos no escopo inicial
@@ -163,7 +163,7 @@ Antes do go-live:
 - [ ] Permissões efetivas documentadas.
 - [ ] Teste comprovando ausência de acesso a remuneração/folha.
 - [ ] Acesso ao CPF limitado à finalidade de correlação.
-- [ ] Estratégia de proteção/persistência do CPF aprovada.
+- [x] Persistência inicial do CPF definida: texto claro no storage interno do IAM no MVP, sem propagação para AD/logs/portal.
 - [ ] Logs, alertas e portal sem CPF em texto aberto.
 - [ ] Credenciais fora do código/repositório.
 - [ ] Permissões Graph mínimas documentadas.

@@ -1,7 +1,7 @@
 # Identity Correlation — Pessoa, Vínculo e Conta AD
 
-- **Status:** Proposed
-- **Objetivo:** definir como uma pessoa da Senior é correlacionada com uma identidade corporativa no AD DS ao longo de múltiplos vínculos.
+- **Status:** Accepted for MVP
+- **Objetivo:** definir como uma pessoa da Senior é correlacionada com uma identidade corporativa no AD DS ao longo do ciclo de vida e de vínculos sucessivos.
 
 ## Princípio central
 
@@ -16,6 +16,14 @@ Uma mesma pessoa pode possuir diferentes vínculos ao longo do tempo, por exempl
 - desligamento → recontratação.
 
 Essas mudanças não devem, por si só, resultar na criação de uma nova conta no AD DS.
+
+## Premissa de vínculo único
+
+Gente & Gestão confirmou que não existem múltiplos vínculos simultâneos para a mesma pessoa no escopo desta integração. A validação funcional foi fornecida por **Juliana Croda — Gente & Gestão**.
+
+A integração pode, portanto, assumir **no máximo um vínculo ativo relevante por CPF por vez**. Vínculos históricos e Rehire continuam existindo ao longo do tempo e devem reutilizar a mesma identidade por CPF.
+
+Caso a organização passe a permitir múltiplos vínculos simultâneos no futuro, essa premissa deixa de ser válida e a arquitetura de lifecycle/mapping deve ser revisada antes da mudança entrar em produção.
 
 ## Chave de correlação da pessoa
 
@@ -42,21 +50,17 @@ Esses campos podem ser armazenados para rastreabilidade, provisioning e contexto
 Pessoa
 └── CPF: chave de correlação da identidade
     |
-    ├── Vínculo A
-    │   ├── Person ID / referência Senior
-    │   ├── Tipo: Estagiário
-    │   └── Matrícula: 1234
-    │
-    └── Vínculo B
-        ├── Person ID / referência Senior
-        ├── Tipo: CLT
-        └── Matrícula: 9876
+    ├── Vínculo histórico A (encerrado)
+    │   └── matrícula anterior
+    |
+    └── Vínculo atual B (único vínculo ativo no escopo)
+        └── matrícula atual
 
                  |
                  v
 
 Identity IAM
-├── CPF correlation key (protegida)
+├── CPF correlation key
 ├── AD objectGUID
 ├── sAMAccountName
 └── UPN
@@ -101,7 +105,9 @@ A implementação deve evitar propagar o CPF para sistemas que não precisam con
 - não deve ser exibido no portal de auditoria por padrão;
 - não deve ser usado como identificador apresentado ao operador.
 
-O banco do IAM poderá manter uma representação protegida adequada para realizar correlação determinística, desde que a implementação preserve a regra de negócio de que a identidade é vinculada exclusivamente pelo CPF. A estratégia técnica de proteção e persistência será definida na arquitetura de segurança.
+Na primeira fase, o banco do IAM poderá persistir o CPF **em texto claro** para realizar a correlação determinística. Essa decisão foi aceita para simplificar o MVP e deverá ser tratada como risco conhecido.
+
+Mesmo nessa fase, o CPF não deve ser replicado para o AD DS, enviado ao Entra sem necessidade, registrado em logs/alertas ou exposto no portal operacional. Uma fase posterior poderá adotar HMAC, tokenização ou criptografia sem alterar a regra funcional de correlação.
 
 ## Person ID da Senior
 
@@ -234,12 +240,12 @@ O valor do CPF não deve aparecer em texto aberto na evidência operacional. O s
 
 Antes de marcar esta decisão como `Accepted`:
 
-- [ ] confirmar o campo exato de CPF na API Senior;
+- [x] confirmar o campo exato de CPF na API Senior (`person.cpf`);
 - [ ] confirmar que todos os vínculos elegíveis possuem CPF disponível para a integração;
 - [ ] validar comportamento Estagiário → CLT com mudança de matrícula;
-- [ ] validar comportamento em recontratação;
+- [ ] validar comportamento técnico de recontratação ponta a ponta;
 - [ ] definir normalização e validação do CPF;
-- [ ] definir proteção/persistência da chave de correlação no IAM;
+- [x] definir persistência inicial do CPF no IAM (texto claro no MVP, com risco aceito);
 - [ ] definir a chave técnica utilizada entre IAM, Entra e AD DS;
 - [ ] testar CPF ausente, inválido e duplicado;
 - [ ] testar que nenhum fallback por nome, matrícula, Person ID ou e-mail é realizado.
