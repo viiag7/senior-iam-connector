@@ -1,9 +1,9 @@
 # Account Naming Policy — sAMAccountName e UPN
 
-- **Status:** Proposed
+- **Status:** Accepted for MVP
 - **Objetivo:** definir uma política determinística, única e estável para criação e eventual alteração de `sAMAccountName` e `userPrincipalName` no AD DS.
 
-> Esta política registra a proposta acordada até o momento. Os pontos marcados como **A definir com o time** devem ser discutidos e aprovados antes da implementação em produção.
+> Esta política foi adotada como regra de naming do MVP. Os pontos marcados como **A definir com o time** são parâmetros operacionais que ainda precisam ser fechados antes da produção (por exemplo sufixo UPN e limites), mas não alteram o algoritmo-base `primeiro_nome.ultimo_nome`, a verificação de unicidade nem a estabilidade do naming após criação.
 
 ## Princípios
 
