@@ -65,30 +65,26 @@ O IAM deve:
 - impedir a habilitação da conta na data de admissão anteriormente prevista;
 - **garantir que a conta esteja desabilitada no AD DS**;
 - registrar no AD DS os metadados de lifecycle/motivo/data definidos no `attribute-mapping.md`;
-- não excluir automaticamente o objeto do AD DS no MVP;
+- **não excluir o objeto do AD DS; esta integração nunca executa Delete de conta**;
 - preservar CPF/correlação da pessoa e o vínculo com o `objectGUID` criado;
 - cancelar qualquer ação futura agendada de ativação relacionada à admissão excluída;
 - registrar o evento e a origem da confirmação de cancelamento;
 - manter a identidade disponível para auditoria;
 - permitir reutilização da mesma conta caso a pessoa volte a ser cadastrada posteriormente com o mesmo CPF, conforme política de lifecycle e correlação.
 
-Metadados conceituais esperados no AD DS:
+Metadados esperados no AD DS:
 
 ```text
-iamLifecycleState = ADMISSION_CANCELLED
-iamDisableReason  = ADMISSION_CANCELLED
-iamDisabledAt     = <data/hora efetiva da desabilitação>
+seniorIamEmploymentStatus = ADMISSION_CANCELLED
+seniorIamStatusChangedAt  = <data/hora da transição>
+seniorIamDisabledAt       = <data/hora efetiva da desabilitação>
 ```
 
-Os nomes físicos desses atributos ainda devem ser definidos no POC/mapping.
+## Exclusão fora do escopo
 
-## Relação com política de retenção
+O Senior IAM Connector preserva a conta desabilitada e a correlação após `ADMISSION_CANCELLED`. Ele **não executa exclusão de conta em nenhuma fase**.
 
-Uma conta em `ADMISSION_CANCELLED` estará desabilitada e poderá futuramente participar de uma política de retenção/limpeza, mas a exclusão automática definitiva **não faz parte do MVP**.
-
-Quando a política de retenção for aprovada, ela deverá considerar explicitamente `iamLifecycleState` e `iamDisableReason`, e não apenas o fato de a conta estar desabilitada há mais de 30 dias.
-
-Isso evita que uma regra genérica de limpeza trate da mesma forma uma admissão cancelada e uma pessoa temporariamente suspensa por férias/afastamento.
+Se a organização definir no futuro uma política de retenção/limpeza, ela deverá ser implementada e governada fora desta integração.
 
 ## Ausência em consulta não é exclusão confirmada
 
