@@ -256,7 +256,7 @@ Portanto:
 
 > **idade da desabilitação, isoladamente, nunca é critério suficiente para exclusão.**
 
-A exclusão automática definitiva continua fora do MVP até aprovação da política de retenção.
+A exclusão de contas **não é realizada por esta integração**. Qualquer retenção ou exclusão futura pertence a outro processo.
 
 ### Regras obrigatórias
 
