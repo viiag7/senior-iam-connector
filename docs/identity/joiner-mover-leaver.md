@@ -9,7 +9,7 @@ O Senior é a fonte autoritativa para o lifecycle do colaborador. O conector tra
 
 O lifecycle deve ser baseado em **estado e regras determinísticas**, não em tickets ou interpretações manuais.
 
-A conta corporativa representa a pessoa e pode estar relacionada a mais de um vínculo simultâneo. Portanto, o estado efetivo da identidade não pode ser calculado observando apenas um vínculo isoladamente.
+A conta corporativa representa a pessoa. Para esta organização, Gente & Gestão confirmou que não existem múltiplos vínculos simultâneos para a mesma pessoa no escopo da integração; portanto, o vínculo elegível corrente pode ser tratado como a fonte organizacional da identidade.
 
 O modelo funcional considera Joiner, Mover, Leaver, Rehire, cancelamento de admissão e também **suspensões temporárias de acesso**, como férias e afastamentos.
 
@@ -23,28 +23,44 @@ Exceções IAM não alteram o estado de RH no Senior. Elas apenas alteram a aç�
 
 Colaborador elegível para provisionamento segundo os critérios de escopo aprovados.
 
-Critérios a confirmar:
+Critérios de elegibilidade do MVP:
 
-- situação do vínculo;
-- data de admissão;
-- tipo de vínculo elegível;
-- empresa/filial elegível;
-- antecedência permitida para pré-provisionamento.
+- CPF válido e atributos mínimos obrigatórios presentes;
+- vínculo pertencente à allowlist configurada de `contractType`, `employeeType` e `employmentrelationshiptype`;
+- baseline inicial: valores de empregado observados no contrato Senior (`EMPLOYEE` / `EMPREGADO_GERAL`);
+- empresa/filial dentro do escopo autorizado da integração;
+- vínculo não cancelado nem definitivamente desligado no momento do processamento.
 
-### Pré-provisionamento
+Novos tipos de vínculo somente entram na allowlist mediante aprovação funcional; valores desconhecidos não serão considerados elegíveis automaticamente.
 
-A identidade pode precisar ser criada **antes da data efetiva de admissão** para permitir preparação dos processos dependentes de onboarding.
+### Pré-provisionamento e habilitação
 
-A antecedência deve ser configurável e definida por regra de negócio. A criação antecipada da identidade não implica que a conta já esteja habilitada para uso.
+A conta deve ser criada **assim que o colaborador elegível estiver disponível na Senior**.
 
-Devem ser definidos separadamente:
+A criação e a habilitação são decisões separadas:
 
-- número de dias de antecedência;
-- estado técnico da conta após criação;
-- quando o acesso efetivo é liberado.
+```text
+registro elegível aparece na Senior
+        |
+        v
+criar/reutilizar conta imediatamente
+        |
+        v
+PRE_PROVISIONED (desabilitada)
+        |
+        | hireDate - 1 dia
+        v
+ACTIVE (habilitada)
+```
 
-O risco de cadastro tardio na Senior está documentado em `docs/requirements/process-risks-and-assumptions.md`.
+Regra do MVP:
 
+- `createAt` = primeira detecção válida do colaborador na Senior;
+- `enableAt` = **um dia antes de `hireDate`**;
+- se o registro chegar quando `enableAt` já passou e o vínculo continuar elegível, habilitar no próximo processamento seguro;
+- cancelamento de admissão antes da habilitação impede a ativação e leva a `ADMISSION_CANCELLED`.
+
+A hora exata de execução dentro do dia anterior será um parâmetro operacional do scheduler; a regra funcional é D-1.
 ### Resultado esperado
 
 ```text
@@ -134,7 +150,7 @@ Update approved AD DS attributes
 - Mudanças manuais no AD DS em atributos authoritative do Senior podem ser sobrescritas pelo provisioning, exceto exceções de naming formalmente registradas.
 - Mudança de nome não deve criar nova identidade.
 - Falhas que impeçam convergência do estado esperado devem ser rastreadas e alertadas conforme política operacional.
-- Com múltiplos vínculos simultâneos, o conector deve avaliar todos os vínculos relevantes antes de projetar lifecycle e atributos no AD DS.
+- Como o escopo confirmado possui vínculo único simultâneo, alterações de cargo, departamento, gestor, matrícula, empresa e centro de custo do vínculo elegível devem convergir diretamente para a mesma conta AD.
 
 ---
 
@@ -224,15 +240,15 @@ Esse cenário é especialmente importante para a política futura de limpeza de 
 
 O AD DS deve armazenar metadados controlados pelo IAM suficientes para distinguir o motivo e a data da desabilitação.
 
-Modelo conceitual:
+Modelo físico definido para o AD DS:
 
 ```text
-iamLifecycleState = TEMPORARILY_SUSPENDED | ADMISSION_CANCELLED | TERMINATED
-iamDisabledAt     = timestamp da desabilitação
-iamDisableReason  = VACATION | LEAVE | LEAVE_NO_END_DATE | ADMISSION_CANCELLED | TERMINATION
+seniorIamEmploymentStatus = PRE_PROVISIONED | ACTIVE | VACATION | LEAVE | ADMISSION_CANCELLED | TERMINATED
+seniorIamStatusChangedAt  = timestamp da última transição
+seniorIamDisabledAt       = timestamp da desabilitação, quando aplicável
 ```
 
-Os nomes físicos dos atributos serão definidos no `attribute-mapping.md`.
+`seniorIamEmploymentStatus` permite identificar diretamente se a pessoa está ativa, em férias, afastada ou desligada.
 
 Esses metadados são necessários porque uma rotina de limpeza baseada apenas em “conta desabilitada há mais de 30 dias” poderia apagar indevidamente uma conta de férias ou afastamento prolongado.
 
@@ -258,21 +274,11 @@ A exclusão automática definitiva continua fora do MVP até aprovação da pol�
 
 ### Trigger funcional
 
-A pessoa deixa de possuir vínculo elegível que justifique manutenção do acesso, conforme a regra de agregação de múltiplos vínculos.
+O vínculo único elegível da pessoa é encerrado na Senior.
 
-Os códigos e situações exatos do Senior devem ser documentados no Discovery.
+A regra de negócio exige que a conta seja desabilitada **no instante efetivo da demissão**. O campo `dismissalDate` confirmado em `getEmployee` é apenas uma data; portanto, sozinho ele não comprova o horário exato. Antes de produção deve ser identificada uma fonte autoritativa com timestamp/evento de desligamento, ou uma regra oficial de horário fornecida pela Senior/Gente & Gestão.
 
-Exemplo importante:
-
-```text
-Mesmo CPF
-├── CLT = TERMINATED
-└── PJ  = ACTIVE
-
-=> a identidade NÃO é TERMINATED
-```
-
-Somente o encerramento de um vínculo não é suficiente para desabilitar a identidade quando outro vínculo elegível permanecer ativo.
+Até essa fonte ser validada, a implementação não deve afirmar precisão de horário baseada somente em `dismissalDate`.
 
 ### Resultado esperado do MVP
 
@@ -293,9 +299,17 @@ Confirm expected state
         +--> failure: CRITICAL alert + retry/escalation
 ```
 
-### Regra segura inicial
+### Regra de desligamento
 
-**Disable antes de Delete.** O MVP não deve excluir automaticamente contas do AD DS.
+A integração executa **Disable, nunca Delete**. Esta não é apenas uma limitação do MVP: o Senior IAM Connector **não deve excluir contas do AD DS**.
+
+Ao desligar:
+
+- definir `seniorIamEmploymentStatus = TERMINATED`;
+- registrar `seniorIamStatusChangedAt`;
+- registrar `seniorIamDisabledAt` com o instante efetivo do disable;
+- desabilitar a conta;
+- preservar o objeto AD e a correlação para possível Rehire.
 
 Falha ao desabilitar conta cujo estado esperado é `TERMINATED` é evento **CRITICAL**.
 
@@ -305,9 +319,9 @@ Nenhum override de férias, afastamento ou outra suspensão temporária pode imp
 
 ## Rehire
 
-Rehire deve reutilizar a identidade existente quando o CPF for o mesmo e a correlação não apresentar conflito.
+Rehire deve reutilizar e **reativar a mesma identidade existente** quando o CPF for o mesmo e a correlação não apresentar conflito.
 
-O naming existente deve ser preservado por padrão, conforme `naming-policy.md`.
+O naming existente deve ser preservado por padrão, conforme `naming-policy.md`. Na recontratação, o conector deve atualizar todos os atributos autoritativos que tenham mudado, incluindo matrícula, cargo, departamento, gestor, empresa, centro de custo, tipo de vínculo e datas relevantes.
 
 Exemplo:
 
@@ -341,7 +355,7 @@ PRE_PROVISIONED
 
 `ADMISSION_CANCELLED` é terminal para aquela admissão e mantém a conta desabilitada, mas não representa uma pessoa que efetivamente iniciou e depois foi desligada.
 
-Com múltiplos vínculos, a precedência só deve ser aplicada **depois** de calcular o estado agregado da pessoa.
+Como o escopo possui vínculo único simultâneo, não há etapa de agregação entre vínculos. A precedência é aplicada diretamente ao estado corrente da pessoa/vínculo.
 
 ---
 
@@ -386,7 +400,6 @@ A reconciliação posterior pode iniciar um novo ciclo de convergência, preserv
 | Afastamento sem data final | Manter conta desabilitada até novo estado autoritativo |
 | Admissão postergada após pré-provisionamento | Recalcular liberação conforme nova data |
 | Admissão cancelada após pré-provisionamento | Manter/desabilitar conta; `ADMISSION_CANCELLED` |
-| CLT encerrado + PJ ativo | Manter identidade conforme vínculo ativo elegível |
 | Falha de uma identidade | Não bloquear processamento das demais |
 | Provisioning aceito mas sem convergência | Manter acompanhamento; alertar quando exceder tolerância |
 
