@@ -261,27 +261,24 @@ O sistema deve:
 
 O AD DS deve possuir metadados controlados pelo IAM suficientes para identificar **quando** e **por que** uma conta foi desabilitada.
 
-Conceitualmente, devem existir informações equivalentes a:
+Os atributos físicos definidos para o AD DS são:
 
 ```text
-iamLifecycleState
-iamDisabledAt
-iamDisableReason
+seniorIamEmploymentStatus
+seniorIamStatusChangedAt
+seniorIamDisabledAt
 ```
 
-Os atributos físicos serão definidos no mapping técnico.
+`seniorIamEmploymentStatus` deve diferenciar, no mínimo:
 
-Esses metadados devem permitir diferenciar, no mínimo:
+- `ACTIVE`;
+- `PRE_PROVISIONED`;
+- `VACATION`;
+- `LEAVE`;
+- `ADMISSION_CANCELLED`;
+- `TERMINATED`.
 
-- férias;
-- afastamento;
-- afastamento sem data final;
-- cancelamento de admissão;
-- desligamento.
-
-Uma futura rotina de limpeza de contas desabilitadas há mais de 30 dias não poderá utilizar somente a idade da desabilitação. Contas em `TEMPORARILY_SUSPENDED`, inclusive afastamentos prolongados sem data final, não podem ser excluídas apenas por ultrapassarem 30 dias desabilitadas.
-
-A exclusão automática definitiva permanece fora do MVP até aprovação de política específica de retenção.
+A integração **não executa exclusão de contas**. Retenção e limpeza, se existirem futuramente, pertencem a outro processo.
 
 ## RF-018 — Leaver e desabilitação por desligamento
 
@@ -607,7 +604,6 @@ Algumas regras já documentadas em outros arquivos passaram a aparecer explicita
 - `docs/requirements/process-risks-and-assumptions.md`
 - `docs/integration/senior-admission-deletion.md`
 - Issue #7 — SLA de cadastro na Senior para onboarding
-- Issue #8 — múltiplos vínculos simultâneos
 
 ## Referências Microsoft para validação técnica
 
