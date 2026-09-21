@@ -31,12 +31,13 @@ O sistema deve identificar, a partir dos dados autoritativos da Senior, pessoas 
 
 O sistema deve:
 
-1. aplicar os critérios de elegibilidade aprovados para empresa, tipo de vínculo, situação e demais regras de escopo;
-2. não provisionar registros que não atendam aos critérios de elegibilidade;
-3. registrar a decisão de não provisionar quando necessário para auditoria;
-4. interpretar estados e datas da Senior para determinar o lifecycle esperado da identidade.
-
-Os códigos/situações exatos da Senior continuam sujeitos ao Discovery.
+1. exigir CPF válido e atributos mínimos obrigatórios;
+2. aplicar allowlist configurada sobre `contractType`, `employeeType` e `employmentrelationshiptype`;
+3. usar como baseline inicial os valores de empregado observados no contrato Senior (`EMPLOYEE` / `EMPREGADO_GERAL`);
+4. respeitar o escopo de empresa/filial autorizado;
+5. não provisionar valores desconhecidos ou fora da allowlist;
+6. registrar a decisão de não provisionar quando necessário para auditoria;
+7. interpretar estados e datas da Senior para determinar o lifecycle esperado da identidade.
 
 ## RF-002 — Criação automática da identidade
 
@@ -52,11 +53,11 @@ A criação deve:
 
 ## RF-003 — Pré-provisionamento e eventos futuros
 
-O sistema deve permitir criar a identidade antes da data efetiva de admissão, dentro de uma janela configurável de pré-provisionamento.
+O sistema deve criar ou reutilizar a identidade **assim que o colaborador elegível estiver disponível na Senior**.
 
-A criação antecipada não implica habilitação do acesso.
+A criação não implica habilitação imediata do acesso. A conta deve permanecer em `PRE_PROVISIONED` e ser habilitada **um dia antes de `hireDate`**.
 
-Antes de qualquer ativação futura, o sistema deve considerar alterações, adiamentos ou cancelamentos registrados na Senior.
+Se o registro for detectado após esse marco e continuar elegível, a habilitação deve ocorrer no próximo processamento seguro. Antes de qualquer ativação futura, o sistema deve considerar alterações, adiamentos ou cancelamentos registrados na Senior.
 
 Quando uma admissão já pré-provisionada for confirmadamente cancelada/excluída na Senior, o sistema deve:
 
@@ -133,22 +134,18 @@ Depois que a pessoa estiver correlacionada, as operações técnicas devem utili
 
 A associação técnica não substitui o CPF como chave funcional exclusiva para determinar a pessoa.
 
-## RF-009 — Múltiplos vínculos simultâneos e estado efetivo da identidade
+## RF-009 — Premissa de vínculo único simultâneo
 
-Uma Identity IAM pode estar associada a múltiplos vínculos simultâneos da mesma pessoa, incluindo cenários como CLT + PJ.
+Para o escopo desta integração, Gente & Gestão confirmou que uma pessoa não possui múltiplos vínculos simultâneos relevantes para IAM.
 
-Antes de habilitar, suspender, reativar ou desabilitar a conta, o sistema deve considerar o conjunto de vínculos conhecidos e elegíveis da pessoa.
+O sistema deve assumir no máximo um vínculo ativo relevante por CPF por vez. Consequentemente:
 
-O sistema deve obedecer às seguintes regras:
+1. não é necessária agregação de lifecycle entre vínculos concorrentes;
+2. matrícula, cargo, departamento, gestor, empresa e centro de custo do vínculo corrente podem ser projetados diretamente;
+3. vínculos históricos e Rehire continuam correlacionados à mesma identidade pelo CPF;
+4. caso a premissa de vínculo único deixe de ser válida, o processamento deve ser revisto antes de suportar o novo cenário.
 
-1. um segundo vínculo com o mesmo CPF não cria uma segunda conta AD;
-2. o encerramento de um vínculo isolado não deve desabilitar a conta quando existir outro vínculo ativo e elegível;
-3. a identidade somente pode assumir `TERMINATED` quando não existir outro vínculo elegível que justifique manutenção do acesso;
-4. antes de um `disable` de Leaver, deve ser validado o estado consolidado mais recente da pessoa;
-5. quando o vínculo encerrado era a origem de atributos projetados no AD DS, esses atributos devem ser recalculados conforme a política de precedência aplicável aos vínculos remanescentes;
-6. o processamento em ordens diferentes deve convergir para o mesmo estado final.
-
-A regra final de precedência entre atributos de vínculos simultâneos permanece em definição na Issue #8.
+Validação funcional: **Juliana Croda — Gente & Gestão**.
 
 ## RF-010 — Rehire e mudança de vínculo
 
@@ -159,9 +156,10 @@ O sistema deve:
 1. reutilizar a mesma conta AD DS quando ela ainda existir;
 2. preservar a correlação da pessoa;
 3. preservar `objectGUID`, username e UPN por padrão, conforme política de naming;
-4. atualizar os atributos relacionados ao vínculo vigente;
-5. reativar a conta quando o lifecycle permitir;
-6. nunca criar uma nova identidade apenas porque matrícula, tipo de vínculo ou referência interna da Senior mudou.
+4. atualizar todos os atributos autoritativos do vínculo vigente, incluindo matrícula, cargo, departamento, gestor, empresa, centro de custo, tipo de vínculo e datas relevantes;
+5. reativar a mesma conta quando o novo vínculo elegível permitir acesso;
+6. definir o estado operacional novamente conforme o lifecycle atual;
+7. nunca criar uma nova identidade apenas porque matrícula, tipo de vínculo ou referência interna da Senior mudou.
 
 ## RF-011 — Mover e atualização de atributos aprovados
 
@@ -287,19 +285,19 @@ A exclusão automática definitiva permanece fora do MVP até aprovação de pol
 
 ## RF-018 — Leaver e desabilitação por desligamento
 
-Quando o **estado efetivo da pessoa** atingir desligamento, o sistema deve desabilitar a conta no AD DS conforme a data e o horário efetivos definidos pela regra de negócio.
+Quando o vínculo elegível for efetivamente desligado, o sistema deve desabilitar a conta AD **no instante efetivo da demissão**.
 
-Antes do disable, o sistema deve verificar o estado consolidado dos vínculos da pessoa.
+O campo `dismissalDate` do `getEmployee` é somente data e não é suficiente, isoladamente, para garantir precisão de horário. Antes do go-live deve existir uma fonte autoritativa de timestamp/evento ou uma regra oficial de horário acordada com a Senior/Gente & Gestão.
 
-O sistema não deve desabilitar a conta por encerramento isolado de um vínculo quando outro vínculo ativo e elegível permanecer vigente.
+Quando o desligamento estiver confirmado:
 
-Quando o desligamento efetivo da pessoa estiver confirmado:
-
-1. a identidade assume `TERMINATED`;
-2. a conta deve ser desabilitada;
-3. férias, afastamentos ou overrides não podem impedir o bloqueio;
-4. a falha em atingir o estado desabilitado deve gerar alerta `CRITICAL`;
-5. o MVP não deve excluir automaticamente a conta.
+1. definir `seniorIamEmploymentStatus = TERMINATED`;
+2. registrar `seniorIamStatusChangedAt`;
+3. registrar `seniorIamDisabledAt` com o instante efetivo do disable;
+4. desabilitar a conta;
+5. férias, afastamentos ou overrides não podem impedir o bloqueio;
+6. falha em atingir o estado desabilitado deve gerar alerta `CRITICAL`;
+7. **nunca excluir a conta por meio desta integração**.
 
 ## RF-019 — Auditoria das operações de lifecycle
 
@@ -483,10 +481,12 @@ AD = ENABLED
 
 # Política de precedência
 
-A precedência final precisa considerar também múltiplos vínculos. Como baseline de lifecycle da identidade:
+Como o escopo validado possui vínculo único simultâneo, não existe precedência entre vínculos concorrentes.
+
+Para estados do mesmo vínculo, a precedência funcional permanece:
 
 ```text
-TERMINATED
+TERMINATED / ADMISSION_CANCELLED
         >
 TEMPORARILY_SUSPENDED
         >
@@ -495,36 +495,30 @@ ACTIVE
 PRE_PROVISIONED
 ```
 
-`ADMISSION_CANCELLED` é um estado terminal específico de pré-admissão e não deve ser tratado como `TERMINATED` de uma pessoa que efetivamente iniciou o vínculo.
-
-A aplicação dessa precedência depende primeiro do cálculo consolidado dos vínculos. Um `TERMINATED` isolado em um vínculo não significa `TERMINATED` da identidade quando outro vínculo elegível permanece ativo.
+No AD DS, o estado operacional é materializado em `seniorIamEmploymentStatus` com valores específicos como `VACATION`, `LEAVE` e `TERMINATED`.
 
 ---
 
 # Decisões ainda abertas
 
-Os requisitos consolidados acima registram as regras já definidas. Permanecem pendentes:
+As seguintes decisões ainda precisam ser fechadas ou comprovadas tecnicamente:
 
-- número de dias de antecedência do pré-provisionamento;
-- estado técnico inicial da conta pré-provisionada;
-- momento exato de liberação inicial de credenciais;
-- critérios finais de elegibilidade por empresa e tipo de vínculo;
-- códigos/situações da Senior que representam férias, afastamentos, retorno e desligamento;
-- horário efetivo de início/fim de suspensão e desligamento;
+- códigos/situações e endpoints Senior que representam férias, afastamentos, retorno e desligamento;
+- fonte autoritativa do **timestamp exato de desligamento**, já que `dismissalDate` é apenas uma data;
+- horário operacional do scheduler para habilitação em D-1;
 - comportamento detalhado quando eventos de suspensão se sobrepõem;
-- política de lifecycle quando um vínculo está suspenso e outro vínculo simultâneo está ativo;
-- regra de precedência de atributos entre múltiplos vínculos;
-- comportamento quando a conta de um Rehire já foi removida por futura política de retenção;
 - normalização/validação técnica do CPF;
-- estratégia de proteção da representação persistida do CPF;
-- atributos físicos do AD DS usados para `iamLifecycleState`, `iamDisabledAt` e `iamDisableReason`;
+- chave técnica usada entre IAM, Entra e AD DS;
+- target físico de matrícula (`employeeNumber`, `employeeID` ou equivalente);
+- resolução de `workstation.hierarchyItem.id` até a pessoa gestora;
+- OID/sintaxe final dos atributos customizados do AD DS;
 - intervalos padrão de backoff;
 - grupos/responsáveis exatos por alertas;
 - mecanismo técnico de WhatsApp;
 - eventual revogação imediata de sessões/tokens de Microsoft Entra/M365 durante férias/suspensões;
-- SLA de cadastro antecipado na Senior para onboarding, tratado na Issue #7;
-- política final de retenção/exclusão de contas;
-- regras finais de múltiplos vínculos, tratadas na Issue #8.
+- comportamento de initial password / first sign-in.
+
+Decisões já fechadas no MVP incluem: naming policy, criação imediata ao aparecer na Senior, habilitação em D-1, vínculo único simultâneo, Rehire com reutilização/reativação e atualização de atributos, CPF em texto claro no storage interno na primeira fase e proibição de exclusão de contas por esta integração.
 
 ---
 
@@ -538,7 +532,7 @@ Salvo decisão posterior explícita, o MVP não inclui:
 - RBAC completo;
 - provisionamento de grupos e entitlements de aplicações;
 - licenciamento Microsoft 365;
-- exclusão automática definitiva de contas;
+- exclusão de contas pelo Senior IAM Connector (proibida por desenho);
 - gestão de senha de usuário final;
 - dados de remuneração, folha, benefícios, saúde, dependentes ou dados bancários.
 
