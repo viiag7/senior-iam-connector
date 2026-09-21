@@ -69,26 +69,26 @@ O schema observado de `getEmployee` contém no mesmo registro:
 | UPN | Calculado | mapping/transform | `userPrincipalName` | Sim | IAM policy | Política proposta em `naming-policy.md` |
 | E-mail corporativo | `emails[].email` | `emails.work` / atributo de contato | `mail` e/ou `proxyAddresses` conforme política | Condicional | Senior | **Campo confirmado; regra de seleção/target pendente** |
 | Cargo | `jobPosition.name` | `title` | `title` | Não | Senior | **Confirmado** |
-| Código do cargo | `jobPosition.codcar` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Código do cargo | `jobPosition.codcar` | custom | `seniorIamJobCode` | Não | Senior | **Confirmado; atributo custom definido** |
 | Departamento | `department.name` | `department` | `department` | Não | Senior | **Confirmado** |
-| Código do departamento | `department.code` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Código do departamento | `department.code` | custom | `seniorIamDepartmentCode` | Não | Senior | **Confirmado; atributo custom definido** |
 | Empresa | `employer.companyName` | `organization`/custom | `company` | Não | Senior | **Confirmado** |
-| Código da empresa | `employer.numemp` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
-| Centro de custo | `costCenter.name` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
-| Código do centro de custo | `costCenter.codccu` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Código da empresa | `employer.numemp` | custom | `seniorIamCompanyCode` | Não | Senior | **Confirmado; atributo custom definido** |
+| Centro de custo | `costCenter.name` | custom | `seniorIamCostCenter` | Não | Senior | **Confirmado; atributo custom definido** |
+| Código do centro de custo | `costCenter.codccu` | custom | `seniorIamCostCenterCode` | Não | Senior | **Confirmado; atributo custom definido** |
 | Gestor | `workstation.hierarchyItem.id` como referência de hierarquia | resolver hierarquia → pessoa gestora → identidade IAM | `manager` | Não | Senior + IAM correlation | **Referência confirmada; resolução do gestor pendente** |
-| Tipo de contrato | `contractType` | regra de elegibilidade / custom | custom/extension attribute se necessário | Não | Senior | **Confirmado** |
-| Tipo de colaborador | `employeeType` | regra de elegibilidade / custom | custom/extension attribute se necessário | Não | Senior | **Confirmado** |
-| Relação empregatícia | `employmentrelationshiptype` | regra de elegibilidade / custom | custom/extension attribute se necessário | Não | Senior | **Confirmado** |
+| Tipo de contrato | `contractType` | regra de elegibilidade / custom | `seniorIamContractType` | Não | Senior | **Confirmado; atributo custom definido** |
+| Tipo de colaborador | `employeeType` | regra de elegibilidade / custom | `seniorIamEmployeeType` | Não | Senior | **Confirmado; atributo custom definido** |
+| Relação empregatícia | `employmentrelationshiptype` | regra de elegibilidade / custom | `seniorIamEmploymentRelationshipType` | Não | Senior | **Confirmado; atributo custom definido** |
 | Situação efetiva do vínculo | **Não há campo de status explícito confirmado no schema observado** | lifecycle input calculado a partir dos dados autoritativos e regras aprovadas | não projetar isoladamente como estado da conta | Sim | Senior + IAM policy | **Pendente de definição funcional/técnica** |
 | Data de admissão | `hireDate` | `employeeHireDate` quando aplicável / lifecycle | custom/extension attribute se necessário | Sim | Senior | **Confirmado** |
 | Data de desligamento | `dismissalDate` | `employeeLeaveDateTime` quando aplicável / lifecycle | custom/extension attribute se necessário | Condicional | Senior | **Confirmado** |
 | Posto / unidade organizacional | `workstation.workstationGroup.name` | custom | `physicalDeliveryOfficeName` ou custom | Não | Senior | **Campo confirmado; semântica/target pendente** |
-| Código do posto | `workstation.workstationGroup.postra` | custom | extension/custom attribute | Não | Senior | **Confirmado; target físico pendente** |
+| Código do posto | `workstation.workstationGroup.postra` | custom | `seniorIamWorkstationCode` | Não | Senior | **Confirmado; atributo custom definido** |
 | Telefone do vínculo | `phoneContact[]` | atributo de contato quando corporativo | `telephoneNumber` / `mobile` conforme tipo | Não | Senior | **Campo confirmado; filtro de tipo pendente** |
-| Estado efetivo IAM | Calculado | `iamLifecycleState` lógico | **atributo custom/extension a definir** | Sim | IAM policy | Necessário para auditoria/retention |
-| Data/hora da desabilitação | Calculado no momento da ação | `iamDisabledAt` lógico | **atributo custom/extension a definir** | Condicional | IAM policy | Necessário quando conta desabilitada |
-| Motivo da desabilitação | Calculado pela regra de lifecycle | `iamDisableReason` lógico | **atributo custom/extension a definir** | Condicional | IAM policy | Necessário quando conta desabilitada |
+| Estado operacional IAM | Calculado a partir da Senior + política IAM | `employmentStatus` lógico | `seniorIamEmploymentStatus` | Sim | IAM policy | **Atributo custom definido** |
+| Data/hora da última mudança de estado | Calculado no momento da transição | `statusChangedAt` lógico | `seniorIamStatusChangedAt` | Sim | IAM policy | **Atributo custom definido** |
+| Data/hora da desabilitação | Calculado no momento da ação | `disabledAt` lógico | `seniorIamDisabledAt` | Condicional | IAM policy | **Atributo custom definido** |
 
 ## Campos confirmados no schema que não entram no contrato IAM padrão
 
@@ -122,93 +122,75 @@ costCenter.company
 
 A existência desses campos na resposta reforça a necessidade de minimização no processamento e de evitar logging de payload completo.
 
-## Tratamento do CPF
+## Atributos customizados do AD DS
 
-O CPF faz parte do contrato IAM **exclusivamente porque é a chave de identidade da pessoa**.
+Foi decidido estender o schema do AD DS em vez de reutilizar genericamente `extensionAttribute1..15`. Os nomes abaixo são os `ldapDisplayName` propostos para o projeto e devem receber OIDs próprios no processo de extensão de schema:
 
-Seu uso deve seguir minimização de exposição:
+| Atributo AD DS | Tipo sugerido | Origem / finalidade |
+|---|---|---|
+| `seniorIamJobCode` | Directory String | `jobPosition.codcar` |
+| `seniorIamDepartmentCode` | Directory String | `department.code` |
+| `seniorIamCostCenter` | Directory String | `costCenter.name` |
+| `seniorIamCostCenterCode` | Directory String | `costCenter.codccu` |
+| `seniorIamCompanyCode` | Integer/String conforme validação de schema | `employer.numemp` |
+| `seniorIamWorkstationCode` | Directory String | `workstation.workstationGroup.postra` |
+| `seniorIamContractType` | Directory String | `contractType` |
+| `seniorIamEmployeeType` | Directory String | `employeeType` |
+| `seniorIamEmploymentRelationshipType` | Directory String | `employmentrelationshiptype` |
+| `seniorIamEmploymentStatus` | Directory String | estado operacional projetado pelo IAM |
+| `seniorIamStatusChangedAt` | Generalized Time | data/hora da última transição de estado |
+| `seniorIamDisabledAt` | Generalized Time | data/hora efetiva em que a conta foi desabilitada |
 
-- normalizar e validar antes do matching;
-- não usar o valor em texto aberto como correlation ID;
-- não registrar o valor em logs ou alertas;
-- não exibir no portal de auditoria por padrão;
-- não gravar como atributo visível no AD DS;
-- não enviar ao Entra Provisioning se o provisioning técnico puder operar usando a correlação já mantida pelo IAM;
-- proteger a representação persistida no banco do IAM conforme decisão de segurança específica.
-
-O fato de o CPF ser a chave funcional não implica que o número precise circular por todos os componentes. Após a correlação, o IAM deve manter a associação com o objeto AD correspondente.
-
-## Metadados de lifecycle no AD DS
-
-O AD DS precisa permitir distinguir **o motivo da desabilitação** sem depender apenas de `userAccountControl`, pois esse atributo informa que a conta está desabilitada, mas não representa o motivo funcional nem a data original definida pelo IAM.
-
-Modelo lógico:
-
-```text
-iamLifecycleState
-iamDisabledAt
-iamDisableReason
-```
-
-Valores iniciais esperados para `iamLifecycleState`:
+Valores iniciais permitidos para `seniorIamEmploymentStatus`:
 
 ```text
 PRE_PROVISIONED
 ACTIVE
-TEMPORARILY_SUSPENDED
+VACATION
+LEAVE
 ADMISSION_CANCELLED
 TERMINATED
 ```
 
-Valores iniciais esperados para `iamDisableReason`:
+Esse atributo é a referência operacional para distinguir, no AD DS, conta ativa, pré-provisionada, em férias, afastada, com admissão cancelada ou desligada.
+
+> A extensão de schema deve ser executada de forma controlada em laboratório antes de produção. Nome, OID, sintaxe, single/multi-valued e replicação devem ser validados com o time de AD DS.
+
+## Tratamento do CPF
+
+O CPF faz parte do contrato IAM **exclusivamente porque é a chave de identidade da pessoa**.
+
+Para a primeira fase foi aceita a persistência do CPF em texto claro **somente no storage interno do IAM**, para simplificar a correlação inicial. Essa decisão é um risco conscientemente aceito para o MVP e deve ser reavaliada antes de ampliar o escopo ou a exposição do serviço.
+
+Mesmo nessa fase:
+
+- normalizar e validar antes do matching;
+- não usar o CPF como correlation ID público;
+- não registrar o valor em logs ou alertas;
+- não exibir no portal de auditoria por padrão;
+- não gravar como atributo do AD DS;
+- não enviar ao Entra Provisioning quando não houver necessidade técnica.
+
+Após a correlação, o IAM deve manter a associação com o objeto AD correspondente. Uma fase posterior poderá substituir a persistência em texto claro por HMAC/tokenização/criptografia sem alterar a regra funcional de correlação.
+
+## Estado operacional no AD DS
+
+O AD DS deve expor o estado funcional calculado pelo IAM por meio de `seniorIamEmploymentStatus`.
+
+Mapeamento inicial:
 
 ```text
-VACATION
-LEAVE
-LEAVE_NO_END_DATE
-ADMISSION_CANCELLED
-TERMINATION
+PRE_PROVISIONED      -> conta criada, ainda não liberada
+ACTIVE               -> conta habilitada
+VACATION             -> férias; conta desabilitada conforme política
+LEAVE                -> afastamento; conta desabilitada conforme política
+ADMISSION_CANCELLED  -> admissão cancelada; conta desabilitada
+TERMINATED           -> desligado; conta desabilitada
 ```
 
-### Finalidade
+`seniorIamStatusChangedAt` registra a data/hora da última transição e `seniorIamDisabledAt` registra o instante efetivo do disable quando aplicável.
 
-Esses metadados devem suportar:
-
-- auditoria do estado efetivo da identidade;
-- reconciliação;
-- investigação de conta desabilitada;
-- prevenção de exclusão indevida de conta em férias/afastamento;
-- futura política de retenção/limpeza de contas desabilitadas.
-
-### Regra de segurança para limpeza
-
-Uma futura rotina que avalie contas desabilitadas há mais de 30 dias **não deve utilizar apenas a data da desabilitação**.
-
-Exemplo:
-
-```text
-iamLifecycleState = TEMPORARILY_SUSPENDED
-iamDisableReason  = LEAVE_NO_END_DATE
-iamDisabledAt     = há 90 dias
-
-=> NÃO excluir por idade
-```
-
-A elegibilidade para exclusão deverá depender de lifecycle/motivo aprovado pela política de retenção, por exemplo `TERMINATED` e, se aprovado, `ADMISSION_CANCELLED`.
-
-A exclusão automática definitiva continua fora do MVP.
-
-### Atributo físico
-
-Os nomes `iamLifecycleState`, `iamDisabledAt` e `iamDisableReason` são **nomes lógicos**, não nomes de schema AD já aprovados.
-
-Durante o POC/mapping deve ser definido se serão utilizados:
-
-- atributos de extensão já disponíveis e aprovados no schema;
-- atributos customizados existentes na organização;
-- outra estratégia suportada pelo Entra Provisioning/AD DS.
-
-Evitar reutilizar campos de texto livre destinados a uso humano se isso puder causar sobrescrita ou ambiguidade operacional.
+A integração **não exclui contas do AD DS em nenhum estado**. Retenção e eventual exclusão pertencem a outro processo, fora desta integração.
 
 ## Estado técnico da conta
 
@@ -290,11 +272,13 @@ O schema observado do `getEmployee` não apresentou um campo simples equivalente
 
 O lifecycle não deve assumir que `dismissalDate == null` é suficiente para classificar todos os casos. A situação efetiva deve considerar as regras funcionais aprovadas e, quando necessário, fontes complementares para afastamento, férias, cancelamento e demais estados.
 
-### Múltiplos vínculos
+### Vínculo único
 
-Quando uma pessoa possuir mais de um vínculo simultaneamente, não se deve assumir que matrícula, cargo, departamento, gestor, empresa ou centro de custo de qualquer registro isolado representa automaticamente a identidade.
+Gente & Gestão confirmou que o cenário desta organização não possui múltiplos vínculos simultâneos para a mesma pessoa. Para o escopo desta integração, cada pessoa terá no máximo um vínculo ativo relevante por vez.
 
-A regra de precedência por vínculo/atributo ainda deve ser aprovada conforme Issue #8.
+Com isso, matrícula, cargo, departamento, gestor, empresa e centro de custo do vínculo elegível podem ser projetados diretamente para a identidade, sem regra de precedência entre vínculos.
+
+A confirmação funcional foi fornecida por **Juliana Croda — Gente & Gestão**. Caso essa premissa mude no futuro, a arquitetura deverá ser revisada antes de aceitar múltiplos vínculos.
 
 ## Critério para aprovar um atributo
 
