@@ -110,7 +110,7 @@ Fora do MVP:
 - VPN e aplicações SaaS.
 - Access packages.
 - Access reviews.
-- Processos de retenção/exclusão definitiva da conta.
+- Exclusão de contas pelo conector; o fluxo somente cria, atualiza, habilita e desabilita.
 
 ## Consequências positivas
 
@@ -138,17 +138,29 @@ Não escolhida para o MVP porque transfere para o conector responsabilidades de 
 
 Não atende ao cenário em que a identidade precisa nascer no AD DS local e depois sincronizar para o Entra ID.
 
+## Decisões já fechadas para o MVP
+
+- Senior `employeejourney/getEmployee` é a fonte principal de colaborador.
+- CPF (`person.cpf`) é a chave funcional de correlação.
+- Política de naming de `sAMAccountName` e UPN: `docs/identity/naming-policy.md`.
+- A conta é criada/reutilizada assim que o colaborador elegível aparece na Senior.
+- A conta é habilitada em D-1 (`hireDate - 1 dia`).
+- Gente & Gestão confirmou que não existem múltiplos vínculos simultâneos no escopo.
+- Rehire reutiliza e reativa a mesma conta e atualiza os atributos autoritativos.
+- O conector nunca exclui contas do AD DS.
+- O AD DS será estendido com atributos `seniorIam*` definidos no mapping.
+- CPF pode ser armazenado em texto claro no storage interno do IAM na primeira fase, sem propagação para AD/logs/portal.
+
 ## Decisões ainda abertas
 
-- Identificador imutável do colaborador no Senior.
-- Campos e endpoints exatos da API Senior.
 - Estratégia de delta/polling/eventos disponível na Senior.
-- Política de `sAMAccountName` e `userPrincipalName`.
 - OU padrão e regras de movimentação entre OUs.
-- Tratamento de Rehire.
-- Momento exato do Disable no desligamento.
+- Fonte do timestamp exato de desligamento; `dismissalDate` é apenas data.
+- Resolução do gestor a partir de `workstation.hierarchyItem.id`.
+- Target físico da matrícula no AD (`employeeNumber`, `employeeID` ou equivalente).
+- OIDs/sintaxe final dos atributos customizados `seniorIam*`.
+- Fonte e códigos de férias/afastamentos/retorno.
 - Processo de initial password / first sign-in.
-- Retenção e eventual exclusão da conta.
 
 ## Referências
 
